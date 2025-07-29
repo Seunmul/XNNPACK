@@ -1017,6 +1017,7 @@ enum xnn_status xnn_get_runtime_profiling_info(xnn_runtime_t runtime,
                                                void* param_value,
                                                size_t* param_value_size_ret) {
   if (!runtime->profiling) {
+    
     return xnn_status_invalid_state;
   }
   enum xnn_status status = xnn_status_success;
@@ -1110,6 +1111,8 @@ enum xnn_status xnn_get_runtime_profiling_info(xnn_runtime_t runtime,
     default:
       status = xnn_status_invalid_parameter;
   }
+//   printf("Profiling info for runtime %p, param %d: status %d\n",
+//          runtime, param_name, status);
   return status;
 }
 
@@ -1125,9 +1128,13 @@ enum xnn_status xnn_invoke_runtime(xnn_runtime_t runtime) {
 //   printf("Invoking runtime with %zu operators:\n", runtime->num_ops);
 //   printf("\n[START INVOKE at XNNPACK runtime.c]\n");
 
+DTRACE_PROBE(xnnpack, operator_timer_start);
   if (runtime->profiling) {
     runtime->start_ts = xnn_read_timer();
-    DTRACE_PROBE(xnnpack, operator_timer_start);
+  }
+
+  if (!runtime->profiling){
+    // printf(" Operator %zu is not profiled\n", runtime->num_ops);
   }
 
   for (size_t i = 0; i < runtime->num_ops; i++) {
@@ -1137,8 +1144,8 @@ enum xnn_status xnn_invoke_runtime(xnn_runtime_t runtime) {
         continue;
       }
 
-      //   printf("Invoking operator %zu, object %zu: %s\n", i, j,
-      //          xnn_operator_type_to_string_v2(runtime->opdata[i].operator_objects[j]));
+        // printf("Invoking operator %zu, object %zu: %s\n", i, j,
+        //        xnn_operator_type_to_string_v2(runtime->opdata[i].operator_objects[j]));
 
       const enum xnn_status status = xnn_run_operator_with_index(
           runtime->opdata[i].operator_objects[j], i, j, runtime->threadpool);
@@ -1148,12 +1155,13 @@ enum xnn_status xnn_invoke_runtime(xnn_runtime_t runtime) {
 
       if (runtime->profiling) {
         runtime->opdata[i].end_ts[j] = xnn_read_timer();
-        const char* name = xnn_operator_type_to_string_v2(
-            runtime->opdata[i].operator_objects[j]);
-        DTRACE_PROBE2(xnnpack, operator_timer_check,
-                      (uint32_t)i,
-                      (char*)name);
-      }
+    }
+    const char* name = xnn_operator_type_to_string_v2(
+        runtime->opdata[i].operator_objects[j]);
+    DTRACE_PROBE3(xnnpack, operator_timer_check,
+                  (uint32_t)i,
+                  (uint32_t)j,
+                  (char*)name);
     }
     // DTRACE_PROBE(xnnpack, io_end);
   }
