@@ -429,6 +429,18 @@ XNN_INTERNAL const struct xnn_lut32norm_config* xnn_init_u8_lut32norm_config();
 
 XNN_INTERNAL const struct xnn_unpool_config* xnn_init_x32_unpool_config();
 
+
+//**************************/
+// 이름과 함수 포인터를 매핑하는 LUT의 항목 구조체
+typedef struct {
+    const char* name;
+    void* ptr; // 모든 종류의 함수 포인터를 담기 위해 void* 사용
+} function_lookup_entry;
+
+void* find_function_by_name(const char* name);
+
+#define XNN_MR_TO_INDEX(MR) (MR-1)
+// UARCH 0 is big core.  1 is medium or little core.
 #ifdef __cplusplus
 }  // extern "C"
 #endif

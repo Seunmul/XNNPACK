@@ -24,8 +24,7 @@
   #include <emscripten.h>
 #endif
 
-#define XNN_MR_TO_INDEX(MR) (MR-1)
-// UARCH 0 is big core.  1 is medium or little core.
+
 #ifndef XNN_UARCH_INDEX
 #define XNN_UARCH_INDEX 0
 #endif
@@ -778,12 +777,23 @@ static void init_f32_gemm_config_impl(struct xnn_gemm_config* f32_gemm_config, b
         default:
           f32_gemm_config->minmax.gemm[XNN_MR_TO_INDEX(1)] = XNN_INIT_HMP_GEMM_UKERNEL(xnn_f32_gemm_minmax_ukernel_1x16__fma3_broadcast);
           f32_gemm_config->minmax.gemm[XNN_MR_TO_INDEX(2)] = XNN_INIT_HMP_GEMM_UKERNEL(xnn_f32_gemm_minmax_ukernel_2x16__fma3_broadcast);
+          f32_gemm_config->minmax.gemm[XNN_MR_TO_INDEX(4)] = XNN_INIT_HMP_GEMM_UKERNEL(xnn_f32_gemm_minmax_ukernel_4x16__fma3_broadcast);
           f32_gemm_config->minmax.gemm[XNN_MR_TO_INDEX(5)] = XNN_INIT_HMP_GEMM_UKERNEL(xnn_f32_gemm_minmax_ukernel_5x16__fma3_broadcast);
           f32_gemm_config->init.f32 = xnn_init_f32_minmax_scalar_params;
           f32_gemm_config->pack_gemm_gio = (xnn_packw_gemm_gio_ukernel_fn) xnn_x32_packw_gemm_gio_ukernel_x16__avx_u8;
           f32_gemm_config->pack_gemm_goi = (xnn_packw_gemm_goi_ukernel_fn) xnn_x32_packw_gemm_goi_ukernel_x16__avx_u4;
-          f32_gemm_config->mr = 5;
+          f32_gemm_config->mr = 4;
           f32_gemm_config->nr = 16;
+
+          f32_gemm_config->cache_info.gemm_ukernel_names[XNN_MR_TO_INDEX(1)] = "xnn_f32_gemm_minmax_ukernel_1x16__fma3_broadcast";
+          f32_gemm_config->cache_info.gemm_ukernel_names[XNN_MR_TO_INDEX(2)] = "xnn_f32_gemm_minmax_ukernel_2x16__fma3_broadcast";
+          f32_gemm_config->cache_info.gemm_ukernel_names[XNN_MR_TO_INDEX(4)] = "xnn_f32_gemm_minmax_ukernel_4x16__fma3_broadcast";
+          f32_gemm_config->cache_info.gemm_ukernel_names[XNN_MR_TO_INDEX(5)] = "xnn_f32_gemm_minmax_ukernel_5x16__fma3_broadcast";
+          f32_gemm_config->cache_info.gemm_ukernel_macro_name="XNN_INIT_HMP_GEMM_UKERNEL";
+          f32_gemm_config->cache_info.init_name = "xnn_init_f32_minmax_scalar_params";
+          f32_gemm_config->cache_info.pack_gemm_gio_fn_name = "xnn_x32_packw_gemm_gio_ukernel_x16__avx_u8";
+          f32_gemm_config->cache_info.pack_gemm_goi_fn_name = "xnn_x32_packw_gemm_goi_ukernel_x16__avx_u4";
+          
           break;
       }
     } else if ((hardware_config->arch_flags & xnn_arch_x86_avx)) {
@@ -5339,4 +5349,40 @@ const struct xnn_gemm_config* xnn_init_qu8_gemm_config() {
   }
   XNN_INIT_ONCE(qu8_gemm);
   return &qu8_gemm_config;
+}
+
+
+
+
+
+
+// **중요**: 이 테이블은 저장할 가능성이 있는 모든 커널을 포함해야 합니다.
+static const function_lookup_entry function_lut[] = {
+    // GEMM Ukernels
+    { "xnn_f32_gemm_minmax_ukernel_1x16__fma3_broadcast", (void*)&xnn_f32_gemm_minmax_ukernel_1x16__fma3_broadcast },
+    { "xnn_f32_gemm_minmax_ukernel_2x16__fma3_broadcast", (void*)&xnn_f32_gemm_minmax_ukernel_2x16__fma3_broadcast },
+    { "xnn_f32_gemm_minmax_ukernel_4x16__fma3_broadcast", (void*)&xnn_f32_gemm_minmax_ukernel_4x16__fma3_broadcast },
+    { "xnn_f32_gemm_minmax_ukernel_5x16__fma3_broadcast", (void*)&xnn_f32_gemm_minmax_ukernel_5x16__fma3_broadcast },
+    { "xnn_f32_gemm_minmax_ukernel_6x16__fma3_broadcast", (void*)&xnn_f32_gemm_minmax_ukernel_6x16__fma3_broadcast },
+
+    // Init Function
+    { "xnn_init_f32_minmax_scalar_params", (void*)&xnn_init_f32_minmax_scalar_params },
+
+    // PackW Functions
+    { "xnn_x32_packw_gemm_gio_ukernel_x16__avx_u8", (void*)&xnn_x32_packw_gemm_gio_ukernel_x16__avx_u8 },
+    { "xnn_x32_packw_gemm_goi_ukernel_x16__avx_u4", (void*)&xnn_x32_packw_gemm_goi_ukernel_x16__avx_u4 },
+    
+    // (필요에 따라 다른 아키텍처/커널들을 여기에 계속 추가)
+};
+
+// 이름으로 함수 포인터를 찾는 헬퍼 함수
+void* find_function_by_name(const char* name) {
+    if (name == NULL) return NULL;
+    for (size_t i = 0; i < sizeof(function_lut) / sizeof(function_lut[0]); ++i) {
+        if (strcmp(function_lut[i].name, name) == 0) {
+            return function_lut[i].ptr;
+        }
+    }
+    // LUT에서 함수를 찾지 못하면 NULL 반환
+    return NULL;
 }

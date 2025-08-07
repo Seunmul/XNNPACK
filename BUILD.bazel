@@ -775,10 +775,15 @@ xnnpack_cc_library(
 
 xnnpack_cc_library(
     name = "operators",
-    srcs = OPERATOR_SRCS,
+    srcs = OPERATOR_SRCS +[
+        "cJSON.c",
+        "cJSON_Utils.c",
+    ],
     hdrs = [
         "src/xnnpack/compute.h",
         "src/xnnpack/operator.h",
+        "cJSON.h",
+        "cJSON_Utils.h",
     ],
     copts = select({
         ":debug_build": [],
@@ -816,6 +821,10 @@ xnnpack_cc_library(
         "//src/configs:hardware_config",
         "@pthreadpool",
     ],
+    linkopts = [
+        "-L/usr/lib/x86_64-linux-gnu",  # 링커에게 라이브러리 파일이 있는 경로를 알려줍니다.
+        "-ljson-c"                      # 라이브러리 이름을 지정합니다.
+    ]
 )
 
 xnnpack_cc_library(

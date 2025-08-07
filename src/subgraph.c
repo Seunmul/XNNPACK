@@ -111,6 +111,8 @@ enum xnn_status xnn_insert_pack_lh_node(xnn_subgraph_t subgraph,
 
 enum xnn_status xnn_create_subgraph(uint32_t external_value_ids, uint32_t flags,
                                     xnn_subgraph_t* subgraph_out) {
+xnn_log_info("[xnn_create_subgraph]: external_value_ids=%" PRIu32 ", flags=0x%" PRIx32,
+                  external_value_ids, flags);                                    
   struct xnn_subgraph* subgraph = NULL;
   enum xnn_status status = xnn_status_uninitialized;
 
@@ -144,6 +146,7 @@ enum xnn_status xnn_create_subgraph(uint32_t external_value_ids, uint32_t flags,
   subgraph->num_reserved_values = external_value_ids;
 
   *subgraph_out = subgraph;
+  xnn_log_info("[xnn_create_subgraph:] return:");
   return xnn_status_success;
 
 error:
@@ -231,6 +234,7 @@ void xnn_runtime_value_copy(struct xnn_runtime_value* dst_value,
 }
 
 struct xnn_node* xnn_subgraph_new_node(xnn_subgraph_t subgraph) {
+    // xnn_log_info("[xnn_subgraph_new_node]: Creating new node ");
   struct xnn_node* nodes = subgraph->nodes;
   const size_t size = subgraph->num_nodes;
   const size_t capacity = subgraph->num_reserved_nodes;
@@ -263,7 +267,6 @@ enum xnn_status xnn_subgraph_add_nodes(xnn_subgraph_t subgraph,
   struct xnn_node* nodes = subgraph->nodes;
   const size_t size = subgraph->num_nodes;
   const size_t capacity = subgraph->num_reserved_nodes;
-
   if (capacity < size + num_nodes) {
     const size_t new_capacity =
         max(min(capacity * 2, capacity + 512), capacity + max(num_nodes, 64));

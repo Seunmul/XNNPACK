@@ -238,10 +238,16 @@ enum fully_connected_op_type get_fully_connected_op_type(
   }
 }
 
+//!TODO
 static enum xnn_status create_fully_connected_operator(
     const struct xnn_node* node, const struct xnn_runtime_value* values,
     size_t num_values, struct xnn_operator_data* opdata,
     xnn_weights_cache_t weights_cache) {
+
+ xnn_log_info(
+      "[create_fully_connected_operator] Creating fully-connected operator for node %zu with %zu inputs and %zu outputs",
+      node->id, node->num_inputs, node->num_outputs);
+
   assert(node->num_inputs >= 2);
   assert(node->num_inputs <= 3);
 
@@ -407,12 +413,21 @@ static enum xnn_status create_fully_connected_operator(
           /*flags=*/node->flags, fully_connected_op_ptr);
       break;
     case fc_type_f32_f32_f32:
-      status = xnn_create_fully_connected_nc_f32(
+    //!TODO 
+      status = xnn_create_fully_connected_nc_f32_log(
           input_channels, output_channels,
           /*input_stride=*/input_channels,
           /*output_stride=*/output_channels, kernel_data, bias_data,
           node->activation.output_min, node->activation.output_max,
-          /*flags=*/node->flags, weights_cache, fully_connected_op_ptr);
+          /*flags=*/node->flags, weights_cache, fully_connected_op_ptr,
+          /*node_id=*/node->id);
+
+        // status = xnn_create_fully_connected_nc_f32(
+        //   input_channels, output_channels,
+        //   /*input_stride=*/input_channels,
+        //   /*output_stride=*/output_channels, kernel_data, bias_data,
+        //   node->activation.output_min, node->activation.output_max,
+        //   /*flags=*/node->flags, weights_cache, fully_connected_op_ptr);
       break;
     case fc_type_pf16_f16_f16:
       status = xnn_create_fully_connected_nc_pf16(

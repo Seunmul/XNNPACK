@@ -542,10 +542,14 @@ void propagate_rank(xnn_subgraph_t subgraph) {
   }
 }
 
+//!TODO:CHECK THIS
 static enum xnn_status create_runtime_impl(
     xnn_subgraph_t subgraph, xnn_weights_cache_t weights_cache,
     xnn_workspace_t workspace, pthreadpool_t threadpool,
     xnn_scheduler_t scheduler, uint32_t flags, xnn_runtime_t* runtime_out) {
+
+    xnn_log_info("[create_runtime_impl]: Creating runtime with %zu nodes and %zu values",
+                  subgraph->num_nodes, subgraph->num_values);
   propagate_rank(subgraph);
   struct xnn_runtime* runtime = NULL;
   enum xnn_status status = xnn_status_uninitialized;
@@ -680,6 +684,9 @@ static enum xnn_status create_runtime_impl(
     // Ignore fused nodes
     if (node->type != xnn_node_type_invalid) {
       assert(node->create != NULL);
+      // !TODO: CHECK THIS -> 순회하면서 노드를 생성.
+      xnn_log_info("[creatre_runtime_impl]: creating node %zu: %s", i,
+                    xnn_node_type_to_string(node->type));
       status = node->create(node, runtime->values, runtime->num_values,
                             runtime->opdata + i, weights_cache);
       if (status != xnn_status_success) {
@@ -728,6 +735,9 @@ static enum xnn_status create_runtime_impl(
   runtime->workspace->first_user = runtime;
 
   *runtime_out = runtime;
+
+  xnn_log_info("[create_runtime_impl]:  created runtime %p with %zu nodes and "
+                  "%zu values", runtime, runtime->num_ops, runtime->num_values);
   return xnn_status_success;
 
 error:
@@ -740,6 +750,7 @@ enum xnn_status xnn_create_runtime_v4(xnn_subgraph_t subgraph,
                                       xnn_workspace_t workspace,
                                       pthreadpool_t threadpool, uint32_t flags,
                                       xnn_runtime_t* runtime_out) {
+  xnn_log_info("[xnn_create_runtime_v4]: calling create_runtime_impl");
   return create_runtime_impl(subgraph, weights_cache, workspace, threadpool,
                              /*scheduler=*/NULL, flags, runtime_out);
 }
@@ -888,6 +899,7 @@ static enum xnn_status set_external_values(
 }
 
 static enum xnn_status setup_runtime(xnn_runtime_t runtime) {
+    xnn_log_info("setup_runtime: Setting up runtime with %u operators", runtime->num_ops);
   for (uint32_t opdata_id = 0; opdata_id < runtime->num_ops; opdata_id++) {
     struct xnn_operator_data* opdata = &runtime->opdata[opdata_id];
     for (size_t j = 0; j < XNN_MAX_OPERATOR_OBJECTS; j++) {

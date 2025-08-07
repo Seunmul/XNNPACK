@@ -5,6 +5,7 @@
 //
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
+#define _GNU_SOURCE
 
 #include <assert.h>
 #include <limits.h>
@@ -12,6 +13,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "include/xnnpack.h"
 #include "src/xnnpack/common.h"
@@ -2333,6 +2335,7 @@ enum xnn_status xnn_run_operator(xnn_operator_t op, pthreadpool_t threadpool) {
   return xnn_run_operator_with_index(op, 0, 0, threadpool);
 }
 
+#include <dlfcn.h>
 enum xnn_status xnn_run_operator_with_index(xnn_operator_t op,
                                             size_t opdata_index,
                                             size_t operator_object_index,
@@ -2375,6 +2378,17 @@ enum xnn_status xnn_run_operator_with_index(xnn_operator_t op,
         (void*)((uintptr_t)(op->dynamic_context.gemm ? op->dynamic_context.gemm
                                                      : (void*)&op->context) +
                 compute->context_offset);
+
+
+    //!TODO: LOG compute params
+    // printf("op[%zu] compute[%zu]: operator=%s  microkernel=%s compute_type=%d\n",
+    //        opdata_index, i,
+    //        xnn_operator_type_to_string_v2(op),
+    //        xnn_microkernel_type_to_string(op->ukernel.type),
+    //        compute->type);
+
+
+    void* task_fn = NULL;
     switch (compute->type) {
       case xnn_parallelization_type_1d:
         assert(compute->range[0] != 0);
@@ -2463,6 +2477,21 @@ enum xnn_status xnn_run_operator_with_index(xnn_operator_t op,
             threadpool, compute->task_2d_tile_2d_dynamic, context,
             compute->range[0], compute->range[1], compute->tile[0],
             compute->tile[1], flags);
+
+        // task_fn = (void*)(uintptr_t) compute->task_2d_tile_2d_dynamic_with_id;
+        // if (task_fn != NULL) {
+        //     printf("   task fn = %p\n", task_fn);
+        //     Dl_info info;
+        //     if (dladdr(task_fn, &info)) {
+        //         printf("   Symbol Name: %s\n", info.dli_sname);
+        //         printf("   Library Path: %s\n", info.dli_fname);
+        //     } else {
+        //         printf("   Symbol information not found.\n");
+        //     }
+        // } else {
+        //     printf("   task fn is NULL\n");
+        // }
+        
         break;
       case xnn_parallelization_type_2d_tile_2d_dynamic_with_thread:
         assert(compute->range[0] != 0);

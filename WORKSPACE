@@ -124,3 +124,11 @@ http_archive(
         "https://github.com/google/ruy/archive/9f53ba413e6fc879236dcaa3e008915973d67a4f.zip",
     ],
 )
+
+http_archive(
+    name = "json-c",
+    urls = ["https://github.com/json-c/json-c/archive/refs/tags/json-c-0.18-20240915.tar.gz"],
+    sha256 = "3112c1f25d39eca661fe3fc663431e130cc6e2f900c081738317fba49d29e298",
+    strip_prefix = " json-c-0.18-20240915",
+    build_file = "@//:third_party/json-c.BUILD",
+)

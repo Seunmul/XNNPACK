@@ -158,6 +158,15 @@ struct xnn_ibilinear_chw_config {
   xnn_indirection_init_resize_bilinear2d_chw_fn indirection_init;
 };
 
+struct xnn_gemm_cache_info {
+  const char *gemm_ukernel_names[10]; // 여러 mr에 대응하기 위해 배열 유지
+  const char *gemm_ukernel_macro_name;
+  const char *init_name;
+  const char *pack_gemm_gio_fn_name;
+  const char *pack_gemm_goi_fn_name;
+};
+
+
 struct xnn_gemm_config {
   struct gemm_fused_ukernels minmax;
   struct gemm_fused_ukernels relu;
@@ -192,6 +201,8 @@ struct xnn_gemm_config {
   uint8_t planes;     // number of 4 bit planes (1 for legacy, 2 for unzip)
   uint8_t mr_packed;  // `mr` value used for packed left-hand operands.
   enum xnn_arch_flags arch;
+
+  struct xnn_gemm_cache_info cache_info;
 };
 
 struct xnn_maxpool_config {

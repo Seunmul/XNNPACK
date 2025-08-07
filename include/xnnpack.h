@@ -3879,6 +3879,21 @@ enum xnn_status xnn_create_fully_connected_nc_bf16_f32(
   xnn_weights_cache_t weights_cache,
   xnn_operator_t* fully_connected_op_out);
 
+  //!TODO Add to support AutoTuning
+  enum xnn_status xnn_create_fully_connected_nc_f32_log(
+  size_t input_channels,
+  size_t output_channels,
+  size_t input_stride,
+  size_t output_stride,
+  const float* kernel,
+  const float* bias,
+  float output_min,
+  float output_max,
+  uint32_t flags,
+  xnn_weights_cache_t weights_cache,
+  xnn_operator_t* fully_connected_op_out,
+  uint32_t node_id);
+
 enum xnn_status xnn_create_fully_connected_nc_f32(
   size_t input_channels,
   size_t output_channels,
@@ -3891,6 +3906,7 @@ enum xnn_status xnn_create_fully_connected_nc_f32(
   uint32_t flags,
   xnn_weights_cache_t weights_cache,
   xnn_operator_t* fully_connected_op_out);
+
 
 enum xnn_status xnn_reshape_fully_connected_nc_f32_f16(
   xnn_operator_t fully_connected_op,
