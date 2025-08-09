@@ -203,6 +203,7 @@ struct xnn_gemm_config {
   enum xnn_arch_flags arch;
 
   struct xnn_gemm_cache_info cache_info;
+
 };
 
 struct xnn_maxpool_config {

@@ -1632,43 +1632,74 @@ enum xnn_status xnn_create_fully_connected_nc_bf16_f32(
 #include "cJSON.h"
 
 
-
-// gemm_config에서 커널의 이름 및 식별자를 가져오는 헬퍼 함수
-static const char* get_ukernel_type(const struct xnn_gemm_config* gemm_config) {
-    // minmax, relu, linear 등 커널 타입을 식별하는 로직이 필요합니다.
-    // 현재는 minmax만 가정합니다.
-    return "minmax";
+// JSON file load helper: read entire file and parse JSON or return NULL.
+inline static cJSON* load_json_file(const char* filename) {
+  FILE* fp = fopen(filename, "r");
+  if (fp == NULL) {
+    xnn_log_info("json file not found: %s", filename);
+    return NULL;
+  }
+  fseek(fp, 0, SEEK_END);
+  long size = ftell(fp);
+  fseek(fp, 0, SEEK_SET);
+  char* buf = (char*)malloc(size + 1);
+  if (buf == NULL) {
+    fclose(fp);
+    return NULL;
+  }
+  int bytes_read = fread(buf, 1, size, fp);
+  fclose(fp);
+  buf[size] = '\0';
+  cJSON* root = cJSON_Parse(buf);
+  free(buf);
+  return root;
 }
 
-int load_gemm_config_from_cache( struct xnn_gemm_config* config, const char* cache_filename, int32_t node_id) {
+// JSON file save helper: serialize JSON and write to file.
+inline static void save_json_file(const char* filename, cJSON* root) {
+  char* str = cJSON_Print(root);
+  if (str) {
+    FILE* fp = fopen(filename, "w");
+    if (fp) {
+      fprintf(fp, "%s", str);
+      fclose(fp);
+    }
+    free(str);
+  }
+}
 
-    // 인자로 받은 포인터가 유효한지 확인
-    if (config == NULL) {
+// load gemm config
+int load_gemm_config_from_cache(const char* cache_filename, struct xnn_gemm_config* gemm_config, int32_t node_id) {
+
+    const struct xnn_hardware_config* hw_config = xnn_init_hardware_config();
+    if (hw_config == NULL) {
+        xnn_log_error("Failed to initialize hardware config. Skipping cache Loading.");
+        return -1;
+    }
+
+    if (gemm_config == NULL) {
         xnn_log_error("Invalid config pointer provided.");
         return -1;
     }
+
     // 1. 캐시 파일 읽기 및 파싱
-    FILE* fp = fopen(cache_filename, "r");
-    if (fp == NULL) {
-        xnn_log_info("Cache file not found: %s", cache_filename);
-        return -1; // 캐시 파일 없음
-     }
+    cJSON* root = load_json_file(cache_filename);
 
-    fseek(fp, 0, SEEK_END);
-    long fsize = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-
-    char* json_string = (char*)malloc(fsize + 1);
-    size_t items_read = fread(json_string, 1, fsize, fp);
-    fclose(fp);
-    json_string[fsize] = '\0';
-
-    cJSON* root = cJSON_Parse(json_string);
-    free(json_string);
     if (root == NULL){
         xnn_log_info("Failed to parse JSON from cache file: %s", cache_filename);
         return -1; // JSON 파싱 실패
     } 
+
+    // 1.5 캐시 유효성 검증 (매우 중요!)
+    uint32_t cached_arch_flags = (uint32_t)cJSON_GetObjectItem(root, "arch_flags")->valuedouble;
+    if (hw_config->arch_flags != cached_arch_flags) {
+        cJSON_Delete(root);
+        xnn_log_error("Hardware configuration mismatch.");
+        xnn_log_error("Skipping cache usage for node %d", node_id);
+        xnn_log_error("Removing cache and stopping execution.");
+        remove(cache_filename); // 캐시 파일 전체 삭제
+        return -1; // 하드웨어가 다르므로 캐시 사용 불가
+    }
 
     // 2. JSON 트리 탐색: ukernels -> node_{id}
     cJSON* ukernels = cJSON_GetObjectItem(root, "ukernels");
@@ -1679,6 +1710,8 @@ int load_gemm_config_from_cache( struct xnn_gemm_config* config, const char* cac
 
     char node_id_str[32];
     snprintf(node_id_str, sizeof(node_id_str), "node_%d", node_id);
+
+    // --- Step 3: 노드 객체 탐색 ---
     cJSON* node_object = cJSON_GetObjectItem(ukernels, node_id_str);
     if (node_object == NULL) { 
         cJSON_Delete(root); 
@@ -1686,176 +1719,183 @@ int load_gemm_config_from_cache( struct xnn_gemm_config* config, const char* cac
         return -1; 
     } // 해당 노드 정보 없음
 
-    // 3. 캐시 유효성 검증 (매우 중요!)
-    const struct xnn_hardware_config* current_hw = xnn_init_hardware_config();
-    uint32_t cached_arch_flags = (uint32_t)cJSON_GetObjectItem(node_object, "arch_flags")->valuedouble;
-    if (current_hw->arch_flags != cached_arch_flags) {
-        cJSON_Delete(root);
-        xnn_log_info("Hardware configuration mismatch.");
-        xnn_log_info("Skipping cache usage for node %d", node_id);
-        return -1; // 하드웨어가 다르므로 캐시 사용 불가
-    }
-
     // 4. gemm_config 구조체 재구성
-
     // 숫자 값들 복원
     cJSON* mr_item = cJSON_GetObjectItem(node_object, "mr");
-    cJSON* nr_item = cJSON_GetObjectItem(node_object, "nr");
-    if (mr_item && nr_item) {
-        config->mr = (uint8_t)mr_item->valuedouble;
-        config->nr = (uint8_t)nr_item->valuedouble;
-        // 값을 읽은 후에 로그를 찍습니다.
-        xnn_log_info("Loaded gemm config for node %d with mr=%u, nr=%u", node_id, config->mr, config->nr);
+    if(mr_item == NULL || !cJSON_IsNumber(mr_item)) {
+        xnn_log_error("Failed to find 'mr' in cache for node %d.", node_id);
+        cJSON_Delete(root);
+        return -1; // 또는 다른 에러 처리
     }
+    gemm_config->mr = (uint8_t)mr_item->valuedouble;
 
-    // 먼저 "kernel_names" 객체를 가져옵니다.
+    cJSON* nr_item = cJSON_GetObjectItem(node_object, "nr");
+    if(nr_item == NULL || !cJSON_IsNumber(nr_item)) {
+        xnn_log_error("Failed to find 'nr' in cache for node %d.", node_id);
+        cJSON_Delete(root);
+        return -1; // 또는 다른 에러 처리
+    }
+    gemm_config->nr = (uint8_t)nr_item->valuedouble;
+
+    cJSON* log2_kr_item = cJSON_GetObjectItem(node_object, "log2_kr");
+    if(log2_kr_item == NULL || !cJSON_IsNumber(log2_kr_item)) {
+        xnn_log_error("Failed to find 'log2_kr' in cache for node %d.", node_id);
+        cJSON_Delete(root);
+        return -1; // 또는 다른 에러 처리
+    }
+    gemm_config->log2_kr = (uint8_t)log2_kr_item->valuedouble;
+
+    cJSON* log2_sr_item = cJSON_GetObjectItem(node_object, "log2_sr");
+    if(log2_sr_item == NULL || !cJSON_IsNumber(log2_sr_item)) {
+        xnn_log_error("Failed to find 'log2_sr' in cache for node %d.", node_id);
+        cJSON_Delete(root);
+        return -1; // 또는 다른 에러 처리
+    }
+    gemm_config->log2_sr = (uint8_t)log2_sr_item->valuedouble;
+
     cJSON* kernel_names_obj = cJSON_GetObjectItem(node_object, "kernel_names");
     if (kernel_names_obj == NULL) {
         xnn_log_error("Failed to find 'kernel_names' object in cache for node %d.", node_id);
         cJSON_Delete(root);
-        return false; // 또는 다른 에러 처리
-    }else{
-        xnn_log_info("Restoring gemm ukernels ...");
-         cJSON* item = NULL;
+        return -1; // 또는 다른 에러 처리
+    }
 
-        cJSON* macro_name_item = cJSON_GetObjectItem(kernel_names_obj, "gemm_ukernel_macro_name");
-        const char* macro_name = macro_name_item ? macro_name_item->valuestring : "";
+    xnn_log_info("Restoring gemm ukernels ...");
 
-        // 1. gemm_ukernels 객체의 모든 항목을 순회합니다. (예: "mr_1", "mr_2", ...)
-        cJSON_ArrayForEach(item, kernel_names_obj) {
-            int mr_val = 0;
-            // 2. 키("mr_1" 등)에서 숫자(1 등)를 파싱하여 mr_val에 저장합니다.
-            sscanf(item->string, "mr_%d", &mr_val);
+    cJSON* macro_name_item = cJSON_GetObjectItem(kernel_names_obj, "gemm_ukernel_macro_name");
+    const char* macro_name = macro_name_item ? macro_name_item->valuestring : "";
 
-            // 3. mr_val이 유효한지 확인합니다.
-            if (mr_val > 0) {
-                const char* kernel_name = item->valuestring;
-
-                void *func_ptr = find_function_by_name(kernel_name);
-
-                // 2. 저장된 매크로 이름에 따라 올바른 복원 로직을 수행합니다.
-                if (strcmp(macro_name, "XNN_INIT_HMP_GEMM_UKERNEL") == 0) {
-
-                    struct xnn_hmp_gemm_ukernel ukernel = {{func_ptr}};
-                    for (size_t i = 1; i < XNN_MAX_UARCH_TYPES; i++) {
-                            ukernel.function[i] = func_ptr;
-                   }
-                    config->minmax.gemm[XNN_MR_TO_INDEX(mr_val)] = ukernel;
-                    xnn_log_info("Using gemm microkernel '%s'.", kernel_name);
-
-                } else {
-                    xnn_log_error("Unknown or unsupported microkernel macro type '%s' in cache.", macro_name);
-                }
+    cJSON* item = NULL;
+    // 1gemm_ukernels 객체의 모든 항목을 순회하며 로드 (예: "mr_1", "mr_2", ...)
+    cJSON_ArrayForEach(item, kernel_names_obj) {
+        int mr_val = 0;
+        sscanf(item->string, "mr_%d", &mr_val); 
+        if (mr_val > 0) { 
+            const char* kernel_name = item->valuestring;
+            void *func_ptr = find_function_by_name(kernel_name);
+            if (strcmp(macro_name, "XNN_INIT_HMP_GEMM_UKERNEL") == 0) {
+                struct xnn_hmp_gemm_ukernel ukernel = {{func_ptr}};
+                for (size_t i = 1; i < XNN_MAX_UARCH_TYPES; i++) {
+                        ukernel.function[i] = func_ptr;
+               }
+                gemm_config->minmax.gemm[XNN_MR_TO_INDEX(mr_val)] = ukernel;
+                xnn_log_info("          ----    Using gemm microkernel '%s'.", kernel_name);
+            } else {
+                xnn_log_error("Unknown or unsupported microkernel macro type '%s' in cache.", macro_name);
             }
-        }
-        // 다른 함수들도 이름으로 찾아 포인터 할당
-        cJSON* init_name_item = cJSON_GetObjectItem(kernel_names_obj, "init_name");
-        if (init_name_item != NULL && cJSON_IsString(init_name_item)) {
-            xnn_log_info("Loading init from %s", init_name_item->valuestring);
-            config->init.f32 = find_function_by_name(init_name_item->valuestring);
-        } else {
-            xnn_log_error("Failed to find 'init_name' in cache for node %d.", node_id);
-        }
-
-        cJSON* pack_gio_item = cJSON_GetObjectItem(kernel_names_obj, "pack_gemm_gio_fn_name");
-        if (pack_gio_item != NULL && cJSON_IsString(pack_gio_item)) {
-            xnn_log_info("Loading pack_gemm_gio from %s", pack_gio_item->valuestring);
-            config->pack_gemm_gio = find_function_by_name(pack_gio_item->valuestring);
-        } else {
-            xnn_log_error("Failed to find 'pack_gemm_gio_fn_name' in cache for node %d.", node_id);
-        }
-
-        cJSON* pack_goi_item = cJSON_GetObjectItem(kernel_names_obj, "pack_gemm_goi_fn_name");
-        if (pack_goi_item != NULL && cJSON_IsString(pack_goi_item)) {
-            xnn_log_info("Loading pack_gemm_goi from %s", pack_goi_item->valuestring);
-            config->pack_gemm_goi = find_function_by_name(pack_goi_item->valuestring);
-        } else {
-            xnn_log_error("Failed to find 'pack_gemm_goi_fn_name' in cache for node %d.", node_id);
         }
     }
 
-    
 
+    cJSON* init_name_item = cJSON_GetObjectItem(kernel_names_obj, "init_name");
+    if (init_name_item != NULL && cJSON_IsString(init_name_item)) {
+        xnn_log_info("Loading init from %s", init_name_item->valuestring);
+        gemm_config->init.f32 = find_function_by_name(init_name_item->valuestring);
+        const char* name_to_find = init_name_item->valuestring;
+        xnn_log_info("DEBUG: Attempting to find function pointer for name: '[%s]'", name_to_find);
+
+        if(gemm_config->init.f32 == NULL) {
+            xnn_log_error("Failed to load 'init_name', Removing cache file.");
+            remove(cache_filename); // 캐시 파일 전체 삭제
+            cJSON_Delete(root);
+            return -1; // 함수 로드 실패
+        }
+    } else {
+        xnn_log_error("Failed to find 'init_name' in cache for node %d.", node_id);
+    }
+
+    cJSON* pack_gio_item = cJSON_GetObjectItem(kernel_names_obj, "pack_gemm_gio_fn_name");
+    if (pack_gio_item != NULL && cJSON_IsString(pack_gio_item)) {
+        xnn_log_info("Loading pack_gemm_gio from %s", pack_gio_item->valuestring);
+        gemm_config->pack_gemm_gio = find_function_by_name(pack_gio_item->valuestring);
+        if (gemm_config->pack_gemm_gio == NULL) {
+            xnn_log_error("Failed to load 'pack_gemm_gio'");
+            cJSON_Delete(root);
+            return -1; // 함수 로드 실패
+        }
+    } else {
+        xnn_log_error("Failed to find 'pack_gemm_gio_fn_name' in cache for node %d.", node_id);
+    }
+
+    cJSON* pack_goi_item = cJSON_GetObjectItem(kernel_names_obj, "pack_gemm_goi_fn_name");
+    if (pack_goi_item != NULL && cJSON_IsString(pack_goi_item)) {
+        xnn_log_info("Loading pack_gemm_goi from %s", pack_goi_item->valuestring);
+        gemm_config->pack_gemm_goi = find_function_by_name(pack_goi_item->valuestring);
+        if (gemm_config->pack_gemm_goi == NULL) {
+            xnn_log_error("Failed to load 'pack_gemm_goi'");
+            cJSON_Delete(root);
+            return -1; // 함수 로드 실패
+        }
+    } else {
+        xnn_log_error("Failed to find 'pack_gemm_goi_fn_name' in cache for node %d.", node_id);
+    }
 
     cJSON_Delete(root);
     return 0;
 }
 
-void save_gemm_config_to_cache(const char* cache_filename, int32_t node_id, size_t input_channels, size_t output_channels, const struct xnn_gemm_config* gemm_config) {
+// save gemm config
+void save_gemm_config_to_cache(const char* cache_filename, const struct xnn_gemm_config* gemm_config, int32_t node_id, size_t input_channels, size_t output_channels) {
 
     const struct xnn_hardware_config* hw_config = xnn_init_hardware_config();
     if (hw_config == NULL) {
         xnn_log_error("Failed to initialize hardware config. Skipping cache save.");
         return;
     }
-    cJSON* root = NULL;
 
-    // --- Step 1: 파일을 "r"(읽기) 모드로 열어서 기존 내용 파싱 ---
-    FILE* fp_read = fopen(cache_filename, "r");
-    if (fp_read != NULL) {
-        fseek(fp_read, 0, SEEK_END);
-        long fsize = ftell(fp_read);
-        fseek(fp_read, 0, SEEK_SET);
-
-        char* json_string = (char*)malloc(fsize + 1);
-        if (json_string) {
-            size_t items_read = fread(json_string, 1, fsize, fp_read);
-            json_string[fsize] = '\0';
-            root = cJSON_Parse(json_string); // 기존 문자열을 JSON 객체로 파싱
-            free(json_string);
-        }
-        fclose(fp_read);
+    if (gemm_config == NULL) {
+        xnn_log_error("Invalid config pointer provided.");
+        return;
     }
 
-    // --- Step 2: JSON 객체가 없으면 새로 생성 ---
+    // 1. 캐시 파일 읽기 및 파싱
+    cJSON* root = load_json_file(cache_filename);
+
+    // 파싱 실패 시 생성
     if (root == NULL) {
-        // 파일이 없거나 유효하지 않으면 새로운 JSON 객체 생성
         root = cJSON_CreateObject();
         cJSON_AddStringToObject(root, "xnnpack_version", "1.0.0");
+        cJSON_AddNumberToObject(root, "arch_flags", (int)hw_config->arch_flags);
         cJSON_AddObjectToObject(root, "ukernels");
     }
 
-
+    // 2. JSON 트리 탐색: ukernels -> node_{id}
     cJSON* ukernels = cJSON_GetObjectItem(root, "ukernels");
     if (ukernels == NULL) {
         ukernels = cJSON_AddObjectToObject(root, "ukernels");
     }
 
-    char node_id_str[32];
+    char node_id_str[50];
     snprintf(node_id_str, sizeof(node_id_str), "node_%d", node_id);
     
-    // 이전에 저장된 노드 정보가 있으면 제거 (덮어쓰기 위함)
-    // cJSON_DeleteItemFromObject(ukernels, node_id_str);
-
-
     // --- Step 3: 노드 정보 생성 및 커널 이름 추가 ---
     cJSON* node_object = cJSON_CreateObject();
     cJSON_AddNumberToObject(node_object, "input_channels", (int)input_channels);
     cJSON_AddNumberToObject(node_object, "output_channels", (int)output_channels);
     cJSON_AddNumberToObject(node_object, "mr", (int)gemm_config->mr);
     cJSON_AddNumberToObject(node_object, "nr", (int)gemm_config->nr);
-    cJSON_AddNumberToObject(node_object, "arch_flags", (int)hw_config->arch_flags);
-    // 커널 타입을 저장합니다.
-    cJSON_AddStringToObject(node_object, "ukernel_type", get_ukernel_type(gemm_config));
-    
+    cJSON_AddNumberToObject(node_object, "log2_kr", (int)gemm_config->log2_kr);
+    cJSON_AddNumberToObject(node_object, "log2_sr", (int)gemm_config->log2_sr);
+    cJSON_AddNumberToObject(node_object, "planes", (int)gemm_config->planes);
+    cJSON_AddNumberToObject(node_object, "mr_packed", (int)gemm_config->mr_packed);
 
-    // **** 여기에 커널 이름 저장 로직을 추가합니다 ****
     const struct xnn_gemm_cache_info* cache_info = &gemm_config->cache_info;
     cJSON* kernel_names_obj = cJSON_CreateObject();
 
-    // gemm_ukernel_names 배열을 순회하며 이름 추가
+    if (cache_info->gemm_ukernel_macro_name) {
+        cJSON_AddStringToObject(kernel_names_obj, "gemm_ukernel_macro_name", cache_info->gemm_ukernel_macro_name);
+    }
+
+    // Add kernel names
     for (uint8_t i = 0; i < (uint8_t)gemm_config->mr; i++) {
         if (cache_info->gemm_ukernel_names[i] != NULL) {
-            char mr_key[10];
+            char mr_key[50];
             snprintf(mr_key, sizeof(mr_key), "mr_%d", i + 1);
             cJSON_AddStringToObject(kernel_names_obj, mr_key, cache_info->gemm_ukernel_names[i]);
         }
     }
-    if(cache_info->gemm_ukernel_macro_name) {
-        cJSON_AddStringToObject(kernel_names_obj, "gemm_ukernel_macro_name", cache_info->gemm_ukernel_macro_name);
-    }
 
-    // 단일 커널 이름 추가
+    
     if (cache_info->init_name) {
         cJSON_AddStringToObject(kernel_names_obj, "init_name", cache_info->init_name);
     }
@@ -1866,24 +1906,91 @@ void save_gemm_config_to_cache(const char* cache_filename, int32_t node_id, size
         cJSON_AddStringToObject(kernel_names_obj, "pack_gemm_goi_fn_name", cache_info->pack_gemm_goi_fn_name);
     }
 
-
     cJSON_AddItemToObject(node_object, "kernel_names", kernel_names_obj);
-    // **** 커널 이름 저장 로직 끝 ****
     cJSON_AddItemToObject(ukernels, node_id_str, node_object);
 
-    FILE* fp = fopen(cache_filename, "w");
-    if (fp != NULL) {
-        char* json_output = cJSON_Print(root);
-        if (json_output) {
-            fprintf(fp, "%s", json_output);
-            fclose(fp);
-            free(json_output);
-        }
-    }
+    save_json_file(cache_filename, root);
     cJSON_Delete(root);
 }
 
 
+
+#include "src/gemm-profiler-interface.h"
+
+
+const struct xnn_gemm_config* profile_and_select_kernel(
+    uint32_t flags, size_t mc, size_t nc, size_t kc, int warmup_iters, int measure_iters) 
+{
+    xnn_log_info("[Step 2] Looping through candidates to find the best kernel...");
+
+    // [수정] 통합된 후보 목록을 가져옵니다.
+    const struct gemm_config_candidate* candidates = get_f32_gemm_config_candidates();
+    if (candidates == NULL || candidates[0].gemm_ukernel_name == NULL) {
+        xnn_log_warning("Could not get profiling candidates list.");
+        return NULL;
+    }
+
+    double best_gflops = 0.0;
+    const struct gemm_config_candidate* best_candidate = NULL;
+
+    for (size_t i = 0; candidates[i].gemm_ukernel_name != NULL; i++) {
+        const struct gemm_config_candidate* candidate = &candidates[i];
+        
+        // [수정] 프로파일링 시 후보에 포함된 init/pack 함수를 직접 사용합니다.
+        double gflops = xnn_profile_f32_gemm_minmax(
+            candidate->gemm_ukernel, 
+            candidate->init_fn, candidate->pack_goi_fn,
+            candidate->mr, candidate->nr, 1 << candidate->log2_kr, 1 << candidate->log2_sr,
+            mc, nc, kc, warmup_iters, measure_iters);
+
+        xnn_log_info("  - Profiled %-45s: %.3f GFLOPS", candidate->gemm_ukernel_name, gflops);
+
+        if (gflops > best_gflops) {
+            best_gflops = gflops;
+            best_candidate = candidate;
+        }
+    }
+
+    if (best_candidate != NULL) {
+        xnn_log_info("Profiling complete. Best kernel found: %s (%.3f GFLOPS)",
+                     best_candidate->gemm_ukernel_name, best_gflops);
+        
+        // [수정] 안전한 메모리 공간 (static 변수)을 할당하여 결과를 저장합니다.
+        static struct xnn_gemm_config best_config;
+        memset(&best_config, 0, sizeof(struct xnn_gemm_config)); // 깨끗하게 초기화
+
+        // 최적 후보의 파라미터와 함수 포인터들을 best_config에 채워 넣습니다.
+        best_config.mr = best_candidate->mr;
+        best_config.nr = best_candidate->nr;
+        best_config.log2_kr = best_candidate->log2_kr;
+        best_config.log2_sr = best_candidate->log2_sr;
+        
+        best_config.init.f32 = best_candidate->init_fn;
+        best_config.pack_gemm_goi = best_candidate->pack_goi_fn;
+        best_config.pack_gemm_gio = best_candidate->pack_gio_fn;
+
+        struct xnn_hmp_gemm_ukernel best_ukernel;
+        for (size_t i = 0; i < XNN_MAX_UARCH_TYPES; i++) {
+            best_ukernel.function[i] = best_candidate->gemm_ukernel;
+        }
+        best_config.minmax.gemm[XNN_MR_TO_INDEX(best_candidate->mr)] = best_ukernel;
+
+        // [수정] 캐시 정보도 best_candidate에서 직접 가져옵니다. (조회 함수 불필요)
+        best_config.cache_info.gemm_ukernel_names[XNN_MR_TO_INDEX(best_candidate->mr)] = best_candidate->gemm_ukernel_name;
+        best_config.cache_info.init_name = best_candidate->init_fn_name;
+        best_config.cache_info.pack_gemm_goi_fn_name = best_candidate->pack_goi_fn_name;
+        best_config.cache_info.pack_gemm_gio_fn_name = best_candidate->pack_gio_fn_name;
+        best_config.cache_info.gemm_ukernel_macro_name = "XNN_INIT_HMP_GEMM_UKERNEL";
+
+        // 완전하게 조립된 최적 설정의 포인터를 반환합니다.
+        return &best_config;
+    } else {
+        xnn_log_warning("No suitable kernel was found during profiling.");
+        return NULL;
+    }
+}
+
+// TODO: Implement fully connected operator creation
 enum xnn_status xnn_create_fully_connected_nc_f32_log(
     size_t input_channels, size_t output_channels, size_t input_stride,
     size_t output_stride, const float* kernel, const float* bias,
@@ -1900,7 +2007,7 @@ enum xnn_status xnn_create_fully_connected_nc_f32_log(
     // In a real implementation, you would write a function like
     // `load_from_json_cache` that returns the cached config or NULL.
     struct xnn_gemm_config cached_config= {0};
-    int status = load_gemm_config_from_cache(&cached_config, cache_path, node_id);
+    int status = load_gemm_config_from_cache(cache_path, &cached_config, node_id);
     xnn_log_info("[xnn_create_fully_connected_nc_f32_log] "
                 "Cache status: %d", status);
     const struct xnn_gemm_config* gemm_config = NULL;
@@ -1917,22 +2024,25 @@ enum xnn_status xnn_create_fully_connected_nc_f32_log(
         // 2. Create dummy data for a short run.
         // 3. Time each kernel on the dummy data.
         // 4. Return the fastest one.
-        // gemm_config = profile_and_select_kernel(input_channels, output_channels, flags);
-        gemm_config = xnn_init_f32_gemm_config(flags);
-
+        int warmup_iters = 50;
+        int measure_iters = 50;
+        gemm_config = profile_and_select_kernel(flags, 64, input_channels, output_channels, warmup_iters, measure_iters);
         if (gemm_config == NULL) {
-            xnn_log_error("failed to create %s operator: unsupported hardware configuration or failed profiling",
-            xnn_operator_type_to_string(xnn_operator_type_fully_connected_nc_f32));
-        return xnn_status_unsupported_hardware;
+            gemm_config = xnn_init_f32_gemm_config(flags);
         }
-
         // --- Step 3: Save the newly selected kernel to cache ---
-        save_gemm_config_to_cache(cache_path, node_id, input_channels, output_channels, gemm_config);
+        save_gemm_config_to_cache(cache_path, gemm_config, node_id, input_channels, output_channels);
     }
     
-    xnn_log_info("[xnn_create_fully_connected_nc_f32]"
-                "  created gemm_config: %p, mr: %d, nr: %d" ,
-                gemm_config, (int)gemm_config->mr, (int)gemm_config->nr);
+    xnn_log_info("[xnn_create_fully_connected_nc_f32] created gemm_config:\n"
+                " | mr: %d, nr: %d\n"
+                " | log2_kr: %d\n"
+                " | log2_sr: %d\n"
+                " | planes : %d\n"
+                " | mr_packed: %d\n",
+                (int)gemm_config->mr, (int)gemm_config->nr,
+                (int)gemm_config->log2_kr, (int)gemm_config->log2_sr,
+                (int)gemm_config->planes, (int)gemm_config->mr_packed);
 
 
   return create_fully_connected_nc_f32(
@@ -1940,44 +2050,6 @@ enum xnn_status xnn_create_fully_connected_nc_f32_log(
       bias, output_min, output_max, flags, weights_cache, gemm_config,
       xnn_operator_type_fully_connected_nc_f32, fully_connected_op_out);
 }
-
-
-//   const struct xnn_gemm_config* gemm_nr2_config =
-//       xnn_init_f32_gemm_nr2_config(flags); //TODO nr2는 뭐야?? -> nr2는 nr보다 더 작은 output channels를 지원하는 microkernel config
-
-//     // gemm config에서 mr (M block size)는 5이고	nr (N block size)는 16인데 -> 이게 기본 GEMM 마이크로 커널
-//     // 이후에 gemm_nr2_config에서 mr이 10이고 nr이 8인 마이크로 커널이 등록되었다.
-//   xnn_log_info("[xnn_create_fully_connected_nc_f32]"
-//                 "  gemm_nr2_config: %p, mr: %zu, nr: %zu",
-//                 gemm_nr2_config, gemm_nr2_config->mr, gemm_nr2_config->nr);
-
-//   // Select microkernel configuration based on output channels
-//   if (gemm_nr2_config != NULL) {
-//     xnn_log_info("[xnn_create_fully_connected_nc_f32]"
-//                     "  check if gemm_nr2_config is better than gemm_config");
-//     const size_t nr = gemm_config->nr;
-//     const size_t nr2 = gemm_nr2_config->nr;
-//     size_t nr_overcompute = (nr - output_channels % nr) % nr;
-//     size_t nr2_overcompute = (nr2 - output_channels % nr2) % nr2;
-//     // Switch to alternative microkernel when:
-//     // 1. Alternative microkernel better supports less output channels, or
-//     // 2. Alternative microkernel has less overcompute and default wastes >1% of
-//     // output channels
-//     // TODO: This is a heuristic, and it may not always be optimal. -> 이거 수정해보면 될듯!?
-//     if (nr > output_channels || (nr2_overcompute < nr_overcompute &&
-//                                  nr_overcompute * 100 > output_channels)) {
-//       // Default microkernel is suboptimal, use a microkernel that better
-//       // supports less output channels.
-//       if (gemm_nr2_config->minmax.gemm[gemm_nr2_config->mr - 1]
-//               .function[XNN_UARCH_DEFAULT] != NULL) {
-//         gemm_config = gemm_nr2_config;
-//       }
-//     }
-//   }
-//   xnn_log_info("[xnn_create_fully_connected_nc_f32]"
-//                 "  selected gemm_config: %p, mr: %zu, nr: %zu",
-//                 gemm_config, gemm_config->mr, gemm_config->nr);
-
 
 enum xnn_status xnn_create_fully_connected_nc_f32(
     size_t input_channels, size_t output_channels, size_t input_stride,
@@ -1996,23 +2068,23 @@ xnn_log_info("[xnn_create_fully_connected_nc_f32] "
     return xnn_status_unsupported_hardware;
   }
 
-  xnn_log_info("[xnn_create_fully_connected_nc_f32]"
-               "  gemm_config: %p, mr: %d, nr: %d" ,
-               gemm_config, (int)gemm_config->mr, (int)gemm_config->nr);
+//   xnn_log_info("[xnn_create_fully_connected_nc_f32]"
+//                "  gemm_config: %p, mr: %d, nr: %d" ,
+//                gemm_config, (int)gemm_config->mr, (int)gemm_config->nr);
 
   const struct xnn_gemm_config* gemm_nr2_config =
       xnn_init_f32_gemm_nr2_config(flags); //TODO nr2는 뭐야?? -> nr2는 nr보다 더 작은 output channels를 지원하는 microkernel config
 
     // gemm config에서 mr (M block size)는 5이고	nr (N block size)는 16인데 -> 이게 기본 GEMM 마이크로 커널
     // 이후에 gemm_nr2_config에서 mr이 10이고 nr이 8인 마이크로 커널이 등록되었다.
-  xnn_log_info("[xnn_create_fully_connected_nc_f32]"
-                "  gemm_nr2_config: %p, mr: %d, nr: %d",
-                gemm_nr2_config, (int)gemm_nr2_config->mr, (int)gemm_nr2_config->nr);
+//   xnn_log_info("[xnn_create_fully_connected_nc_f32]"
+//                 "  gemm_nr2_config: %p, mr: %d, nr: %d",
+//                 gemm_nr2_config, (int)gemm_nr2_config->mr, (int)gemm_nr2_config->nr);
 
   // Select microkernel configuration based on output channels
   if (gemm_nr2_config != NULL) {
-    xnn_log_info("[xnn_create_fully_connected_nc_f32]"
-                    "  check if gemm_nr2_config is better than gemm_config");
+    // xnn_log_info("[xnn_create_fully_connected_nc_f32]"
+    //                 "  check if gemm_nr2_config is better than gemm_config");
     const size_t nr = gemm_config->nr;
     const size_t nr2 = gemm_nr2_config->nr;
     size_t nr_overcompute = (nr - output_channels % nr) % nr;
@@ -2590,6 +2662,9 @@ static enum xnn_status reshape_fully_connected_nc(
     bool filter_is_nibble, bool dynamic_quantization,
     uint32_t log2_output_element_size, const void* params, size_t params_size,
     size_t* workspace_size, pthreadpool_t threadpool) {
+    
+  xnn_log_info("[reshape_fully_connected_nc]: started");
+
   if (fully_connected_op->type != expected_operator_type) {
     xnn_log_error(
         "failed to reshape operator: operator type mismatch (expected %s, got "
@@ -2891,6 +2966,39 @@ static enum xnn_status reshape_fully_connected_nc(
   }
   fully_connected_op->state = xnn_run_state_needs_setup;
 
+// Specifically log the reshape plan for debugging purposes.
+  {
+    const struct gemm_context* g = &gemm_context->gemm;
+    const size_t ws = workspace_size ? *workspace_size : 0;
+    const bool has_packed_lh = (g->packed_lh_config != NULL);
+    const bool inlined_lhs = has_packed_lh && inline_lhs_packing;
+    const bool hmp = xnn_is_hmp_gemm_ukernel(g->ukernel);
+
+    xnn_log_info(
+      "[reshape-fully_connected_nc]: Applied plan"
+      " op=%s, batch=%zu, IC=%zu, OC=%zu\n"
+      " | mr=%u, mr_packed=%u, nr=%u, kr=%u, sr=%u, kc=%zu\n"
+      " | nc_tile=%zu, range=[%zu,%zu], tile=[%zu,%zu], threads=%zu\n"
+      " | inline_lhs_packing=%s, packed_lh=%s, dynamic_quantization=%s, hmp=%s\n"
+      " | strides: a=%zu, w=%zu, cm=%zu, cn=%zu, k_scaled=%zu\n"
+      " | log2: input=%u, filter=%u, output=%u, filter_is_nibble=%s\n"
+      " | workspace=%zu\n",
+      xnn_operator_type_to_string_v2(fully_connected_op),
+      batch_size, input_channels, output_channels,
+      g->mr, g->mr_packed, nr, kr, sr, g->kc,
+      nc,
+      gemm_compute->range[0], gemm_compute->range[1],
+      gemm_compute->tile[0], gemm_compute->tile[1],
+      num_threads,
+      inlined_lhs ? "true" : "false",
+      has_packed_lh ? "true" : "false",
+      g->dynamic_quantization ? "true" : "false",
+      hmp ? "true" : "false",
+      g->a_stride, g->w_stride, g->cm_stride, g->cn_stride, g->k_scaled,
+      log2_input_element_size, log2_filter_element_size, g->log2_csize,
+      filter_is_nibble ? "true" : "false",
+      ws);
+  }
   return xnn_status_success;
 }
 
@@ -2939,6 +3047,94 @@ enum xnn_status xnn_reshape_fully_connected_nc_bf16_f32(
       batch_size,
       /*log2_input_element_size=*/XNN_LOG2_SIZEOF_HALF,
       /*log2_filter_element_size=*/XNN_LOG2_SIZEOF_HALF,
+      /*filter_is_nibble=*/false,
+      /*dynamic_quantization=*/false,
+      /*log2_output_element_size=*/XNN_LOG2_SIZEOF_FLOAT,
+      &fully_connected_op->params.f32_minmax,
+      sizeof(fully_connected_op->params.f32_minmax),
+      /*workspace_size=*/NULL, threadpool);
+}
+
+enum xnn_status xnn_reshape_fully_connected_nc_f32_auto_tuning(
+    xnn_operator_t fully_connected_op, size_t batch_size,
+    pthreadpool_t threadpool, uint32_t node_id) {
+
+    
+    const size_t input_channels = fully_connected_op->convolution_op->group_input_channels;
+    const size_t output_channels = fully_connected_op->convolution_op->group_output_channels;
+    const size_t mc = batch_size;
+    const size_t nc = output_channels;
+    const size_t kc = input_channels;
+    
+    const char* cache_path = "./xnn_microkernel_cache.json";
+    struct xnn_gemm_config cached_config = {0};
+    const struct xnn_gemm_config* optimal_config = NULL;
+    
+    
+    xnn_log_info("  ------------- Reshaping with auto-tuning for shape (mc=%d, nc=%d, kc=%d)...",
+                mc, nc, kc);
+    // 1. 캐시에서 최적 설정을 로드합니다.
+    if (load_gemm_config_from_cache(cache_path, &cached_config, node_id) == 0) {
+      xnn_log_info("Node %u: Cache hit. Applying cached config.", node_id);
+      optimal_config = &cached_config;
+    } else {
+      // 2. 캐시가 없으면 프로파일링을 수행합니다.
+      xnn_log_info("Node %u: Cache miss. Profiling for shape (mc=%zu, nc=%zu, kc=%zu)...",
+                   node_id, mc, nc, kc);
+      int wi = 5; //warmup_iter
+      int mi = 10; //measure_iter
+      optimal_config = profile_and_select_kernel(fully_connected_op->flags, mc, nc, kc, wi, mi);
+
+      if (optimal_config != NULL) {
+        save_gemm_config_to_cache(cache_path, optimal_config, node_id, kc, nc);
+      }
+    }
+
+    // 3. [핵심] 연산자의 gemm_config를 최적의 것으로 덮어씁니다.
+    if (optimal_config != NULL) {
+      // 3.1. gemm_config 포인터가 가리키는 내용을 덮어씁니다.
+      // 이 부분은 그대로 유지해도 괜찮지만, 더 안전하게 포인터 자체를 교체합니다.
+      fully_connected_op->gemm_config = optimal_config;
+
+      // 3.2. ukernel 정보를 새로운 config에 맞춰 재구성합니다.
+      // create_fully_connected_nc의 로직을 참고하여 필요한 부분만 정확히 업데이트합니다.
+      const uint32_t mr = optimal_config->mr;
+      const uint32_t nr = optimal_config->nr;
+      const uint32_t kr = UINT32_C(1) << optimal_config->log2_kr;
+      const uint32_t sr = UINT32_C(1) << optimal_config->log2_sr;
+      const uint32_t mr_packed = optimal_config->mr_packed ? optimal_config->mr_packed : mr;
+
+      fully_connected_op->ukernel.gemm_ukernels->gemm = (struct xnn_ukernel_gemm){
+          .mr = mr,
+          .nr = nr,
+          .kr = kr,
+          .sr = sr,
+          .mr_packed = mr_packed,
+      };
+
+      assert(XNN_MAX_MR >= mr);
+      for (size_t i = 0; i < mr; i++) {
+        fully_connected_op->ukernel.gemm_ukernels->gemm.gemm_cases[i] =
+            optimal_config->minmax.gemm[i];
+      }
+
+      xnn_log_info("[xnn_reshape_fully_connected_nc_f32_auto_tuning] Node %u: Optimal GEMM config has been applied.", node_id);
+      xnn_log_info("[xnn_reshape_fully_connected_nc_f32_auto_tuning] created gemm_config:\n"
+                " | mr: %d, nr: %d\n"
+                " | log2_kr: %d\n"
+                " | log2_sr: %d\n"
+                " | planes : %d\n"
+                " | mr_packed: %d\n",
+                (int)optimal_config->mr, (int)optimal_config->nr,
+                (int)optimal_config->log2_kr, (int)optimal_config->log2_sr,
+                (int)optimal_config->planes, (int)optimal_config->mr_packed);
+    }
+
+
+  return reshape_fully_connected_nc(
+      fully_connected_op, xnn_operator_type_fully_connected_nc_f32, batch_size,
+      /*log2_input_element_size=*/XNN_LOG2_SIZEOF_FLOAT,
+      /*log2_filter_element_size=*/XNN_LOG2_SIZEOF_FLOAT,
       /*filter_is_nibble=*/false,
       /*dynamic_quantization=*/false,
       /*log2_output_element_size=*/XNN_LOG2_SIZEOF_FLOAT,

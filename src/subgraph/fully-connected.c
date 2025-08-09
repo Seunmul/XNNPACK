@@ -256,6 +256,21 @@ static enum xnn_status create_fully_connected_operator(
   assert(input_id < num_values);
   const struct xnn_runtime_value* input_value = &values[input_id];
 
+
+    // 입력 텐서의 전체 shape 정보
+  xnn_log_info("Input tensor shape: num_dims=%zu", input_value->shape.num_dims);
+  for (size_t i = 0; i < input_value->shape.num_dims; i++) {
+    xnn_log_info("  dim[%zu] = %zu", i, input_value->shape.dim[i]);
+  }
+
+  // 전체 featuremap 크기 (배치 포함)
+  size_t total_input_elements = 1;
+  for (size_t i = 0; i < input_value->shape.num_dims; i++) {
+    total_input_elements *= input_value->shape.dim[i];
+  }
+  xnn_log_info("Total input elements: %zu", total_input_elements);
+  
+
   const uint32_t filter_id = node->inputs[1];
   assert(filter_id != XNN_INVALID_VALUE_ID);
   assert(filter_id < num_values);
@@ -414,20 +429,20 @@ static enum xnn_status create_fully_connected_operator(
       break;
     case fc_type_f32_f32_f32:
     //!TODO 
-      status = xnn_create_fully_connected_nc_f32_log(
+    //   status = xnn_create_fully_connected_nc_f32_log(
+    //       input_channels, output_channels,
+    //       /*input_stride=*/input_channels,
+    //       /*output_stride=*/output_channels, kernel_data, bias_data,
+    //       node->activation.output_min, node->activation.output_max,
+    //       /*flags=*/node->flags, weights_cache, fully_connected_op_ptr,
+    //       /*node_id=*/node->id);
+
+        status = xnn_create_fully_connected_nc_f32(
           input_channels, output_channels,
           /*input_stride=*/input_channels,
           /*output_stride=*/output_channels, kernel_data, bias_data,
           node->activation.output_min, node->activation.output_max,
-          /*flags=*/node->flags, weights_cache, fully_connected_op_ptr,
-          /*node_id=*/node->id);
-
-        // status = xnn_create_fully_connected_nc_f32(
-        //   input_channels, output_channels,
-        //   /*input_stride=*/input_channels,
-        //   /*output_stride=*/output_channels, kernel_data, bias_data,
-        //   node->activation.output_min, node->activation.output_max,
-        //   /*flags=*/node->flags, weights_cache, fully_connected_op_ptr);
+          /*flags=*/node->flags, weights_cache, fully_connected_op_ptr);
       break;
     case fc_type_pf16_f16_f16:
       status = xnn_create_fully_connected_nc_pf16(
@@ -799,6 +814,17 @@ static enum xnn_status reshape_fully_connected_operator(
   const size_t old_workspace_size = opdata->workspace_size;
   enum xnn_status status = xnn_status_invalid_state;
 
+  xnn_log_info(
+      "[reshape_fully_connected_operator] Reshaping fully-connected operator for node %d with batch size %zu, input channels %zu, output channels %zu",
+      opdata->id, batch_size, input_channels, output_channels);
+
+
+
+// TODO: START Implementing Profiling and caching logic
+
+
+// TODO: END Implementing Profiling and caching logic
+
   xnn_operator_t fully_connected_op = opdata->operator_objects[0];
   switch (fully_connected_op->type) {
     case xnn_operator_type_fully_connected_nc_bf16_f32:
@@ -834,8 +860,10 @@ static enum xnn_status reshape_fully_connected_operator(
           fully_connected_op, batch_size, &opdata->workspace_size, threadpool);
       break;
     case xnn_operator_type_fully_connected_nc_f32:
-      status = xnn_reshape_fully_connected_nc_f32(fully_connected_op,
-                                                  batch_size, threadpool);
+    //   status = xnn_reshape_fully_connected_nc_f32(fully_connected_op,
+    //                                               batch_size, threadpool);
+        status = xnn_reshape_fully_connected_nc_f32_auto_tuning(fully_connected_op,
+                                                        batch_size, threadpool, opdata->id);
       break;
     case xnn_operator_type_fully_connected_nc_pf32:
       status = xnn_reshape_fully_connected_nc_pf32(

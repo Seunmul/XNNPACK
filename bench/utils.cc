@@ -65,7 +65,7 @@ static void InitWipeBuffer() {
   // level 17.
   wipe_buffer = memalign(128, wipe_buffer_size);
 #else
-  (void)posix_memalign((void**)&wipe_buffer, 128, wipe_buffer_size);
+  int buf_size=posix_memalign((void**)&wipe_buffer, 128, wipe_buffer_size);
 #endif
   if (wipe_buffer != nullptr) {
     memset(wipe_buffer, 0xA5, wipe_buffer_size);

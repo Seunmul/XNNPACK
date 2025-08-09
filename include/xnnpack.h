@@ -3918,6 +3918,11 @@ enum xnn_status xnn_reshape_fully_connected_nc_bf16_f32(
   size_t batch_size,
   pthreadpool_t threadpool);
 
+//TODO add support for auto tuning
+enum xnn_status xnn_reshape_fully_connected_nc_f32_auto_tuning(
+    xnn_operator_t fully_connected_op, size_t batch_size,
+    pthreadpool_t threadpool, uint32_t node_id);
+
 enum xnn_status xnn_reshape_fully_connected_nc_f32(
   xnn_operator_t fully_connected_op,
   size_t batch_size,

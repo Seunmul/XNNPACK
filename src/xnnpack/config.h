@@ -431,11 +431,31 @@ XNN_INTERNAL const struct xnn_unpool_config* xnn_init_x32_unpool_config();
 
 
 //**************************/
-// 이름과 함수 포인터를 매핑하는 LUT의 항목 구조체
-typedef struct {
-    const char* name;
-    void* ptr; // 모든 종류의 함수 포인터를 담기 위해 void* 사용
-} function_lookup_entry;
+
+
+struct gemm_config_candidate {
+    // 커널 자체에 대한 정보
+    const char* gemm_ukernel_name;
+    xnn_f32_gemm_minmax_ukernel_fn gemm_ukernel;
+    size_t mr;
+    size_t nr;
+    uint8_t log2_kr;
+    uint8_t log2_sr;
+
+    // 함께 사용될 부가 함수들에 대한 정보 (이름과 포인터)
+    const char* init_fn_name;
+    xnn_init_f32_minmax_params_fn init_fn;
+
+    const char* pack_goi_fn_name;
+    xnn_x32_packw_gemm_goi_ukernel_fn pack_goi_fn;
+    
+    const char* pack_gio_fn_name;
+    xnn_x32_packw_gemm_gio_ukernel_fn pack_gio_fn;
+};
+
+
+const struct gemm_config_candidate* get_f32_gemm_config_candidates(void);
+
 
 void* find_function_by_name(const char* name);
 

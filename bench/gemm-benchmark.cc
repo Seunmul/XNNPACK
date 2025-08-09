@@ -1568,3 +1568,5 @@ void GEMMBenchmark(benchmark::State& state, xnn_f16_gemm_minmax_ukernel_fn gemm,
       benchmark::Counter(uint64_t(state.iterations()) * 2 * mc * nc * kc,
                          benchmark::Counter::kIsRate);
 }
+
+

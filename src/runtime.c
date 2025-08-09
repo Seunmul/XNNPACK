@@ -843,7 +843,7 @@ enum xnn_status xnn_reshape_runtime(xnn_runtime_t runtime) {
       continue;
     }
     assert(opdata->reshape != NULL);
-    xnn_log_debug("reshaping operator %u (%s)", opdata_id,
+    xnn_log_info("reshaping operator %u (%s)", opdata_id,
                   xnn_operator_type_to_string_v2(opdata->operator_objects[0]));
     enum xnn_status status = opdata->reshape(
         opdata, runtime->values, runtime->num_values, runtime->threadpool);
@@ -1130,6 +1130,7 @@ enum xnn_status xnn_get_runtime_profiling_info(xnn_runtime_t runtime,
 
 #include <sys/sdt.h>
 
+__attribute__((used))
 enum xnn_status xnn_invoke_runtime(xnn_runtime_t runtime) {
 #ifdef XNN_SLINKY_AVAILABLE
   if (runtime->slinky_pipeline) {

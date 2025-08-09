@@ -774,6 +774,20 @@ xnnpack_cc_library(
 )
 
 xnnpack_cc_library(
+    name = "gemm_profiler",
+    hdrs = ["src/gemm-profiler-interface.h"],
+    srcs = ["src/gemm-profiler-interface.cc"],
+    deps = [
+        ":allocator",
+        ":buffer",
+        ":common",
+        ":math",
+        "//bench:bench_utils", # bench_utils는 여전히 bench 패키지에 있으므로 경로 유지
+    ],
+)
+
+
+xnnpack_cc_library(
     name = "operators",
     srcs = OPERATOR_SRCS +[
         "cJSON.c",
@@ -820,11 +834,8 @@ xnnpack_cc_library(
         "//src/configs:config_hdrs",
         "//src/configs:hardware_config",
         "@pthreadpool",
+        ":gemm_profiler" #커스텀
     ],
-    linkopts = [
-        "-L/usr/lib/x86_64-linux-gnu",  # 링커에게 라이브러리 파일이 있는 경로를 알려줍니다.
-        "-ljson-c"                      # 라이브러리 이름을 지정합니다.
-    ]
 )
 
 xnnpack_cc_library(
