@@ -514,6 +514,8 @@ DECLARE_F32_GEMM_MINMAX_UKERNEL_FUNCTION(
 DECLARE_F32_GEMM_MINMAX_UKERNEL_FUNCTION(
     xnn_f32_gemm_minmax_ukernel_1x12__asm_aarch64_neonfma_cortex_a53)
 DECLARE_F32_GEMM_MINMAX_UKERNEL_FUNCTION(
+    xnn_f32_gemm_minmax_ukernel_1x12__asm_aarch64_neonfma_cortex_a53_prfm)
+DECLARE_F32_GEMM_MINMAX_UKERNEL_FUNCTION(
     xnn_f32_gemm_minmax_ukernel_4x1__asm_aarch64_neonfma_ld64)
 DECLARE_F32_GEMM_MINMAX_UKERNEL_FUNCTION(
     xnn_f32_gemm_minmax_ukernel_4x1__asm_aarch64_neonfma_ld128)
@@ -541,6 +543,10 @@ DECLARE_F32_GEMM_MINMAX_UKERNEL_FUNCTION(
     xnn_f32_gemm_minmax_ukernel_4x8__asm_aarch64_neonfma_ld128)
 DECLARE_F32_GEMM_MINMAX_UKERNEL_FUNCTION(
     xnn_f32_gemm_minmax_ukernel_4x12__asm_aarch64_neonfma_cortex_a53)
+DECLARE_F32_GEMM_MINMAX_UKERNEL_FUNCTION(
+    xnn_f32_gemm_minmax_ukernel_4x12__asm_aarch64_neonfma_cortex_a53_prfm)
+DECLARE_F32_GEMM_MINMAX_UKERNEL_FUNCTION(
+    xnn_f32_gemm_minmax_ukernel_5x8__asm_aarch64_neonfma_cortex_a53_prfm)
 DECLARE_F32_GEMM_MINMAX_UKERNEL_FUNCTION(
     xnn_f32_gemm_minmax_ukernel_5x8__asm_aarch64_neonfma_cortex_a75)
 DECLARE_F32_GEMM_MINMAX_UKERNEL_FUNCTION(

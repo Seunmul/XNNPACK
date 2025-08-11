@@ -2024,8 +2024,8 @@ enum xnn_status xnn_create_fully_connected_nc_f32_log(
         // 2. Create dummy data for a short run.
         // 3. Time each kernel on the dummy data.
         // 4. Return the fastest one.
-        int warmup_iters = 50;
-        int measure_iters = 50;
+        int warmup_iters = 5;
+        int measure_iters = 20;
         gemm_config = profile_and_select_kernel(flags, 64, input_channels, output_channels, warmup_iters, measure_iters);
         if (gemm_config == NULL) {
             gemm_config = xnn_init_f32_gemm_config(flags);
@@ -3082,7 +3082,7 @@ enum xnn_status xnn_reshape_fully_connected_nc_f32_auto_tuning(
       xnn_log_info("Node %u: Cache miss. Profiling for shape (mc=%zu, nc=%zu, kc=%zu)...",
                    node_id, mc, nc, kc);
       int wi = 5; //warmup_iter
-      int mi = 10; //measure_iter
+      int mi = 20; //measure_iter
       optimal_config = profile_and_select_kernel(fully_connected_op->flags, mc, nc, kc, wi, mi);
 
       if (optimal_config != NULL) {
@@ -3093,11 +3093,9 @@ enum xnn_status xnn_reshape_fully_connected_nc_f32_auto_tuning(
     // 3. [핵심] 연산자의 gemm_config를 최적의 것으로 덮어씁니다.
     if (optimal_config != NULL) {
       // 3.1. gemm_config 포인터가 가리키는 내용을 덮어씁니다.
-      // 이 부분은 그대로 유지해도 괜찮지만, 더 안전하게 포인터 자체를 교체합니다.
-      fully_connected_op->gemm_config = optimal_config;
+      memcpy((void*)fully_connected_op->gemm_config, optimal_config, sizeof(struct xnn_gemm_config));
 
       // 3.2. ukernel 정보를 새로운 config에 맞춰 재구성합니다.
-      // create_fully_connected_nc의 로직을 참고하여 필요한 부분만 정확히 업데이트합니다.
       const uint32_t mr = optimal_config->mr;
       const uint32_t nr = optimal_config->nr;
       const uint32_t kr = UINT32_C(1) << optimal_config->log2_kr;
