@@ -146,6 +146,7 @@ static enum xnn_status create_fully_connected_nc(
     goto error;
   }
 
+  //! CHECK WEIGHT CACHE
   fully_connected_op->weights_cache = weights_cache;
 
   const uint32_t nr = gemm_config->nr;
@@ -199,11 +200,18 @@ static enum xnn_status create_fully_connected_nc(
   size_t cache_offset = XNN_CACHE_NOT_FOUND;
   struct xnn_weights_cache_look_up_key cache_key;
   cache_key.seed = cache_seed;
-  cache_key.kernel = kernel;
+  cache_key.kernel = kernel; // Uses TensorFlow Lite Tensor address as one of cache key components
   cache_key.bias = bias;
+
+  //! CHECK WEIGHT CACHE
   if (use_weights_cache(fully_connected_op)) {
-    cache_offset = xnn_weights_cache_look_up(fully_connected_op->weights_cache,
-                                             &cache_key);
+        cache_offset = xnn_weights_cache_look_up(fully_connected_op->weights_cache,
+        &cache_key);
+        //! Added for debug purposes
+        // printf("op->weights_cache %p\n", (void*)fully_connected_op->weights_cache);
+        // printf("cache key Tensor address:%p bias:%p seed:%u -> %u\n", cache_key.kernel, cache_key.bias, cache_key.seed, cache_seed);
+        // printf("cache lookup %p -> %zu\n", (void*)cache_key.kernel, cache_offset);
+        // printf("\n");
   }
 
   if (cache_offset == XNN_CACHE_NOT_FOUND) {

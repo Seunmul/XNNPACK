@@ -164,6 +164,7 @@ enum xnn_status xnn_create_weights_cache_with_size(
                   size_t))xnn_internal_get_or_insert_weights_cache;
   cache_provider->is_finalized =
       (bool (*)(void*))xnn_internal_weights_cache_is_finalized;
+      //! OFFSET TO ADDR FUNCTION POINTER
   cache_provider->offset_to_addr =
       (void* (*)(void*, size_t))xnn_internal_weights_cache_offset_to_addr;
   cache_provider->delete_cache =
@@ -1128,10 +1129,11 @@ enum xnn_status xnn_invoke_runtime(xnn_runtime_t runtime) {
 //   printf("Invoking runtime with %zu operators:\n", runtime->num_ops);
 //   printf("\n[START INVOKE at XNNPACK runtime.c]\n");
 
-DTRACE_PROBE(xnnpack, operator_timer_start);
-  if (runtime->profiling) {
+if (runtime->profiling) {
     runtime->start_ts = xnn_read_timer();
-  }
+    // PROBE FOR OPERATOR-LEVEL PROFILING
+    DTRACE_PROBE(text_gen, ops_start);
+}
 
   if (!runtime->profiling){
     // printf(" Operator %zu is not profiled\n", runtime->num_ops);
@@ -1147,23 +1149,27 @@ DTRACE_PROBE(xnnpack, operator_timer_start);
         // printf("Invoking operator %zu, object %zu: %s\n", i, j,
         //        xnn_operator_type_to_string_v2(runtime->opdata[i].operator_objects[j]));
 
-      const enum xnn_status status = xnn_run_operator_with_index(
-          runtime->opdata[i].operator_objects[j], i, j, runtime->threadpool);
-      if (status != xnn_status_success) {
-        return status;
-      }
-
+      const enum xnn_status status = xnn_run_operator_with_index(runtime->opdata[i].operator_objects[j], i, j, runtime->threadpool);
+      if (status != xnn_status_success) { return status; }
+      
       if (runtime->profiling) {
-        runtime->opdata[i].end_ts[j] = xnn_read_timer();
+            runtime->opdata[i].end_ts[j] = xnn_read_timer();  
+            
+            const char* name = xnn_operator_type_to_string_v2(runtime->opdata[i].operator_objects[j]);
+            // PROBE FOR WEIGHT ADDRESS DEBUGGING
+            if (runtime->opdata[i].operator_objects[j]->packed_weights.offset !=NULL){
+                DTRACE_PROBE5(text_gen, op_weights, (uint64_t)i, (uint64_t)j,(char*)name,
+                    runtime->opdata[i].operator_objects[j]->packed_weights.offset,
+                    runtime->opdata[i].operator_objects[j]->weights_cache->offset_to_addr(
+                        runtime->opdata[i].operator_objects[j]->weights_cache->context,
+                        runtime->opdata[i].operator_objects[j]->packed_weights.offset));
+            }
+            // PROBE FOR OPERATOR-LEVEL PROFILING
+            DTRACE_PROBE3(text_gen, ops_check, (uint64_t)i, (uint64_t)j,(char*)name);
+            DTRACE_PROBE(text_gen, ops_start);
+        }
+    //   printf(" Operator %zu object %zu (%s) done\n", i, j, name);
     }
-    const char* name = xnn_operator_type_to_string_v2(
-        runtime->opdata[i].operator_objects[j]);
-    DTRACE_PROBE3(xnnpack, operator_timer_check,
-                  (uint32_t)i,
-                  (uint32_t)j,
-                  (char*)name);
-    }
-    // DTRACE_PROBE(xnnpack, io_end);
   }
 //   printf("[END INVOKE at XNNPACK runtime.c]\n\n");
   return xnn_status_success;
