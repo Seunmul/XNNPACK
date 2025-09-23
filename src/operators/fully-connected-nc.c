@@ -2420,6 +2420,7 @@ static enum xnn_status reshape_fully_connected_nc(
     }
   }
 
+//   printf("fully_connected reshape\n");
   gemm_context->gemm = (struct gemm_context){
       .k_scaled = input_channels << log2_input_element_size,
       .w_stride = fully_connected_op->weights_stride,
@@ -2441,7 +2442,7 @@ static enum xnn_status reshape_fully_connected_nc(
       .mr_packed = mr_packed,
       .dynamic_quantization = dynamic_quantization,
   };
-
+//   printf("ptr of packed_w: %p\n\n", gemm_context->gemm.packed_w);
   memcpy(&gemm_context->gemm.params, params, params_size);
   gemm_context->gemm.fused_params = &gemm_context->gemm.params;
 

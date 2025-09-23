@@ -18,6 +18,7 @@ static inline bool use_weights_cache(struct xnn_operator* op) {
 
 static inline void* packed_weights(struct xnn_operator* op) {
   if (use_weights_cache(op)) {
+    // printf("Using weights cache\n");
     return op->weights_cache->offset_to_addr(op->weights_cache->context,
                                              op->packed_weights.offset);
   } else {

@@ -1145,24 +1145,35 @@ if (runtime->profiling) {
         // Operator was removed after fusion
         continue;
       }
+      
+      xnn_operator_t op = runtime->opdata[i].operator_objects[j];
+      const char* name = xnn_operator_type_to_string_v2(op);
+    //   printf("Invoking operator %zu, object %zu: %s\n", i, j,xnn_operator_type_to_string_v2(op));
+    //   if (op->type == 71) {
+    //     if(op->dynamic_context.gemm){
+    //         // printf("pointer of packed_w:%p\n", op->dynamic_context.gemm->gemm.packed_w);
+    //     }
+        //! Hooks for weight streaming: direct io trigger point
+        if (runtime->opdata[i].operator_objects[j]->packed_weights.offset !=NULL){
+            runtime->opdata[i].operator_objects[j]->weights_cache->offset_to_addr(
+                runtime->opdata[i].operator_objects[j]->weights_cache->context,
+                runtime->opdata[i].operator_objects[j]->packed_weights.offset);
+        }
+    //   }
 
-        // printf("Invoking operator %zu, object %zu: %s\n", i, j,
-        //        xnn_operator_type_to_string_v2(runtime->opdata[i].operator_objects[j]));
 
       const enum xnn_status status = xnn_run_operator_with_index(runtime->opdata[i].operator_objects[j], i, j, runtime->threadpool);
       if (status != xnn_status_success) { return status; }
       
       if (runtime->profiling) {
             runtime->opdata[i].end_ts[j] = xnn_read_timer();  
-            
-            const char* name = xnn_operator_type_to_string_v2(runtime->opdata[i].operator_objects[j]);
             // PROBE FOR WEIGHT ADDRESS DEBUGGING
             if (runtime->opdata[i].operator_objects[j]->packed_weights.offset !=NULL){
-                DTRACE_PROBE5(text_gen, op_weights, (uint64_t)i, (uint64_t)j,(char*)name,
-                    runtime->opdata[i].operator_objects[j]->packed_weights.offset,
-                    runtime->opdata[i].operator_objects[j]->weights_cache->offset_to_addr(
-                        runtime->opdata[i].operator_objects[j]->weights_cache->context,
-                        runtime->opdata[i].operator_objects[j]->packed_weights.offset));
+                // DTRACE_PROBE5(text_gen, op_weights, (uint64_t)i, (uint64_t)j,(char*)name,
+                //     runtime->opdata[i].operator_objects[j]->packed_weights.offset,
+                //     runtime->opdata[i].operator_objects[j]->weights_cache->offset_to_addr(
+                //         runtime->opdata[i].operator_objects[j]->weights_cache->context,
+                //         runtime->opdata[i].operator_objects[j]->packed_weights.offset));
             }
             // PROBE FOR OPERATOR-LEVEL PROFILING
             DTRACE_PROBE3(text_gen, ops_check, (uint64_t)i, (uint64_t)j,(char*)name);
