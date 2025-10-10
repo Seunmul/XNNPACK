@@ -2334,6 +2334,17 @@ struct xnn_weights_cache_provider {
   /// Destroy a weights cache object, as well as memory used for the cache.
   /// @param context - The user-specified pointer from xnn_weights_cache_provider structure.
   enum xnn_status (*delete_cache)(void* context);
+#ifdef USE_WEIGHT_STREAMING
+  /// Hook function that is called before invoking an operator that uses weights cache.
+  /// @param context - The user-specified pointer from xnn_weights_cache_provider structure.
+  /// @param offset - offset to the start of internal buffer
+  void (*pre_invoke_hook)(void* context, size_t offset);
+
+  /// Hook function that is called after invoking an operator that uses weights cache.
+  /// @param context - The user-specified pointer from xnn_weights_cache_provider structure.
+  /// @param offset - offset to the start of internal buffer
+  void (*post_invoke_hook)(void* context, size_t offset);
+#endif
 };
 
 /// Weights cache is a cache for packed weights. It can be reused between runtimes.

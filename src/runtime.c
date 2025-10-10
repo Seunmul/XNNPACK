@@ -1148,7 +1148,8 @@ if (runtime->profiling) {
 #ifdef USE_WEIGHT_STREAMING
       //! Hooks for weight streaming: direct io trigger point
       if (runtime->opdata[i].operator_objects[j]->packed_weights.offset !=NULL){
-            runtime->opdata[i].operator_objects[j]->weights_cache->offset_to_addr(
+      
+            runtime->opdata[i].operator_objects[j]->weights_cache->pre_invoke_hook(
                 runtime->opdata[i].operator_objects[j]->weights_cache->context,
                 runtime->opdata[i].operator_objects[j]->packed_weights.offset);
       }
@@ -1162,6 +1163,14 @@ if (runtime->profiling) {
             DTRACE_PROBE3(text_gen, ops_check, (uint64_t)i, (uint64_t)j,(char*)name);
             DTRACE_PROBE(text_gen, ops_start);
         }
+#ifdef USE_WEIGHT_STREAMING
+      //! Hooks for weight streaming: direct io trigger point
+      if (runtime->opdata[i].operator_objects[j]->packed_weights.offset !=NULL){
+            runtime->opdata[i].operator_objects[j]->weights_cache->post_invoke_hook(
+                runtime->opdata[i].operator_objects[j]->weights_cache->context,
+                runtime->opdata[i].operator_objects[j]->packed_weights.offset);
+      }
+#endif
     //   printf(" Operator %zu object %zu (%s) done\n", i, j, name);
     }
   }
