@@ -1135,10 +1135,6 @@ if (runtime->profiling) {
     DTRACE_PROBE(text_gen, ops_start);
 }
 
-  if (!runtime->profiling){
-    // printf(" Operator %zu is not profiled\n", runtime->num_ops);
-  }
-
   for (size_t i = 0; i < runtime->num_ops; i++) {
     for (size_t j = 0; j < XNN_MAX_OPERATOR_OBJECTS; j++) {
       if (runtime->opdata[i].operator_objects[j] == NULL) {
@@ -1148,26 +1144,20 @@ if (runtime->profiling) {
       
       xnn_operator_t op = runtime->opdata[i].operator_objects[j];
       const char* name = xnn_operator_type_to_string_v2(op);
+
+#ifdef USE_WEIGHT_STREAMING
       //! Hooks for weight streaming: direct io trigger point
       if (runtime->opdata[i].operator_objects[j]->packed_weights.offset !=NULL){
             runtime->opdata[i].operator_objects[j]->weights_cache->offset_to_addr(
                 runtime->opdata[i].operator_objects[j]->weights_cache->context,
                 runtime->opdata[i].operator_objects[j]->packed_weights.offset);
       }
-
+#endif
       const enum xnn_status status = xnn_run_operator_with_index(runtime->opdata[i].operator_objects[j], i, j, runtime->threadpool);
       if (status != xnn_status_success) { return status; }
       
       if (runtime->profiling) {
             runtime->opdata[i].end_ts[j] = xnn_read_timer();  
-            // PROBE FOR WEIGHT ADDRESS DEBUGGING
-            // if (runtime->opdata[i].operator_objects[j]->packed_weights.offset !=NULL){
-                // DTRACE_PROBE5(text_gen, op_weights, (uint64_t)i, (uint64_t)j,(char*)name,
-                //     runtime->opdata[i].operator_objects[j]->packed_weights.offset,
-                //     runtime->opdata[i].operator_objects[j]->weights_cache->offset_to_addr(
-                //         runtime->opdata[i].operator_objects[j]->weights_cache->context,
-                //         runtime->opdata[i].operator_objects[j]->packed_weights.offset));
-            // }
             // PROBE FOR OPERATOR-LEVEL PROFILING
             DTRACE_PROBE3(text_gen, ops_check, (uint64_t)i, (uint64_t)j,(char*)name);
             DTRACE_PROBE(text_gen, ops_start);
