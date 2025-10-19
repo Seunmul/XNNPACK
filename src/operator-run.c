@@ -2375,6 +2375,13 @@ enum xnn_status xnn_run_operator_with_index(xnn_operator_t op,
         (void*)((uintptr_t)(op->dynamic_context.gemm ? op->dynamic_context.gemm
                                                      : (void*)&op->context) +
                 compute->context_offset);
+
+    // if(op->dynamic_context.gemm){
+    //     struct gemm_context* gemm_context = (struct gemm_context*)context;
+    //     printf("Running GEMM with packed_w at address: %p\n", 
+    //            gemm_context->packed_w);
+    // }
+    
     switch (compute->type) {
       case xnn_parallelization_type_1d:
         assert(compute->range[0] != 0);

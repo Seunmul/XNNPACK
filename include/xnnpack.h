@@ -2344,6 +2344,9 @@ struct xnn_weights_cache_provider {
   /// @param context - The user-specified pointer from xnn_weights_cache_provider structure.
   /// @param offset - offset to the start of internal buffer
   void (*post_invoke_hook)(void* context, size_t offset);
+
+  /// Trace ptr addr of weights used in the weights cache.
+  void (*trace_weights_addr)(void* context, void* addr, size_t offset);
 #endif
 };
 

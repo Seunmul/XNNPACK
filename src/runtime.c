@@ -835,6 +835,9 @@ enum xnn_status xnn_reshape_runtime(xnn_runtime_t runtime) {
     assert(opdata->reshape != NULL);
     xnn_log_debug("reshaping operator %u (%s)", opdata_id,
                   xnn_operator_type_to_string_v2(opdata->operator_objects[0]));
+    // printf("xnn_reshape_runtime: reshaping operator %u (%s)\n", opdata_id,
+    //               xnn_operator_type_to_string_v2(opdata->operator_objects[0]));
+
     enum xnn_status status = opdata->reshape(
         opdata, runtime->values, runtime->num_values, runtime->threadpool);
     if (status == xnn_status_reallocation_required) {
@@ -889,6 +892,8 @@ static enum xnn_status set_external_values(
 }
 
 static enum xnn_status setup_runtime(xnn_runtime_t runtime) {
+//   printf("setup_runtime: started\n");
+
   for (uint32_t opdata_id = 0; opdata_id < runtime->num_ops; opdata_id++) {
     struct xnn_operator_data* opdata = &runtime->opdata[opdata_id];
     for (size_t j = 0; j < XNN_MAX_OPERATOR_OBJECTS; j++) {
@@ -911,6 +916,7 @@ static enum xnn_status setup_runtime(xnn_runtime_t runtime) {
   }
 
   runtime->has_been_setup = true;
+//   printf("setup_runtime: finished\n");
   return xnn_status_success;
 }
 
@@ -923,7 +929,10 @@ enum xnn_status xnn_setup_runtime(
     return status;
   }
 
+//   printf("xnn_setup_runtime: start reshaping\n");
+xnn_log_info("xnn_setup_runtime: start reshaping\n");
   status = xnn_reshape_runtime(runtime);
+  xnn_log_info("xnn_setup_runtime: finished reshaping\n");
   if (status != xnn_status_success) {
     xnn_log_error("failed to setup runtime: error in reshaping runtime");
     return status;
@@ -1152,6 +1161,10 @@ if (runtime->profiling) {
             runtime->opdata[i].operator_objects[j]->weights_cache->pre_invoke_hook(
                 runtime->opdata[i].operator_objects[j]->weights_cache->context,
                 runtime->opdata[i].operator_objects[j]->packed_weights.offset);
+            // runtime->opdata[i].operator_objects[j]->weights_cache->trace_weights_addr(
+            //     runtime->opdata[i].operator_objects[j]->weights_cache->context,
+            //     &runtime->opdata[i].operator_objects[j]->dynamic_context.gemm->gemm.packed_w,
+            //     runtime->opdata[i].operator_objects[j]->packed_weights.offset);
       }
 #endif
       const enum xnn_status status = xnn_run_operator_with_index(runtime->opdata[i].operator_objects[j], i, j, runtime->threadpool);

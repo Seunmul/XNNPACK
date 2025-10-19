@@ -18,7 +18,7 @@ static inline bool use_weights_cache(struct xnn_operator* op) {
 
 static inline void* packed_weights(struct xnn_operator* op) {
   if (use_weights_cache(op)) {
-    // printf("Using weights cache\n");
+    printf("packed_weights: \n");
     return op->weights_cache->offset_to_addr(op->weights_cache->context,
                                              op->packed_weights.offset);
   } else {
@@ -26,6 +26,22 @@ static inline void* packed_weights(struct xnn_operator* op) {
   }
 }
 
+static inline void* packed_weights_trace(struct xnn_operator* op) {
+  if (use_weights_cache(op)) {
+    // printf("packed_weights_trace: \n");
+    // printf("value of packed_w: %p ptr of packed_w: %p\n", op->dynamic_context.gemm->gemm.packed_w, &op->dynamic_context.gemm->gemm.packed_w);
+    if(op->dynamic_context.gemm !=NULL){
+        op->weights_cache->trace_weights_addr(
+            op->weights_cache->context,
+            &op->dynamic_context.gemm->gemm.packed_w,
+            op->packed_weights.offset);
+    }
+    return op->weights_cache->offset_to_addr(op->weights_cache->context,
+                                             op->packed_weights.offset);
+  } else {
+    return op->packed_weights.pointer;
+  }
+}
 // Get a pointer to a region to pack weights into. If weights cache is
 // available, use it, returning to a pointer to the cache's buffer, otherwise,
 // allocate and return a pointer to a new region. Returns NULL on error.
