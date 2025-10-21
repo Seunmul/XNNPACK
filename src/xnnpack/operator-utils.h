@@ -18,7 +18,7 @@ static inline bool use_weights_cache(struct xnn_operator* op) {
 
 static inline void* packed_weights(struct xnn_operator* op) {
   if (use_weights_cache(op)) {
-    printf("packed_weights: \n");
+    // printf("packed_weights: \n");
     return op->weights_cache->offset_to_addr(op->weights_cache->context,
                                              op->packed_weights.offset);
   } else {
@@ -30,12 +30,14 @@ static inline void* packed_weights_trace(struct xnn_operator* op) {
   if (use_weights_cache(op)) {
     // printf("packed_weights_trace: \n");
     // printf("value of packed_w: %p ptr of packed_w: %p\n", op->dynamic_context.gemm->gemm.packed_w, &op->dynamic_context.gemm->gemm.packed_w);
+#ifdef USE_WEIGHT_STREAMING
     if(op->dynamic_context.gemm !=NULL){
         op->weights_cache->trace_weights_addr(
             op->weights_cache->context,
             &op->dynamic_context.gemm->gemm.packed_w,
             op->packed_weights.offset);
     }
+#endif
     return op->weights_cache->offset_to_addr(op->weights_cache->context,
                                              op->packed_weights.offset);
   } else {
