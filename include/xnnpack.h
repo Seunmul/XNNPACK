@@ -2347,6 +2347,9 @@ struct xnn_weights_cache_provider {
 
   /// Trace ptr addr of weights used in the weights cache.
   void (*trace_weights_addr)(void* context, void* addr, size_t offset);
+
+  /// Fetch an integer argument from the uppper layer.
+  int (*fetch_arg_int)(void* context);
 #endif
 };
 

@@ -1152,38 +1152,40 @@ if (runtime->profiling) {
       }
       
       xnn_operator_t op = runtime->opdata[i].operator_objects[j];
-      const char* name = xnn_operator_type_to_string_v2(op);
+      
+#ifdef USE_WEIGHT_STREAMING
+      //! Hooks for weight streaming: direct io trigger point
+      if (op->packed_weights.offset !=NULL){
+      
+            op->weights_cache->pre_invoke_hook(
+                op->weights_cache->context,
+                op->packed_weights.offset);
+      }
+#endif
+      const enum xnn_status status = xnn_run_operator_with_index(op, i, j, runtime->threadpool);
+      if (status != xnn_status_success) { return status; }
 
 #ifdef USE_WEIGHT_STREAMING
       //! Hooks for weight streaming: direct io trigger point
-      if (runtime->opdata[i].operator_objects[j]->packed_weights.offset !=NULL){
-      
-            runtime->opdata[i].operator_objects[j]->weights_cache->pre_invoke_hook(
-                runtime->opdata[i].operator_objects[j]->weights_cache->context,
-                runtime->opdata[i].operator_objects[j]->packed_weights.offset);
-            // runtime->opdata[i].operator_objects[j]->weights_cache->trace_weights_addr(
-            //     runtime->opdata[i].operator_objects[j]->weights_cache->context,
-            //     &runtime->opdata[i].operator_objects[j]->dynamic_context.gemm->gemm.packed_w,
-            //     runtime->opdata[i].operator_objects[j]->packed_weights.offset);
+      if (op->packed_weights.offset !=NULL){
+            op->weights_cache->post_invoke_hook(
+                op->weights_cache->context,
+                op->packed_weights.offset);
       }
 #endif
-      const enum xnn_status status = xnn_run_operator_with_index(runtime->opdata[i].operator_objects[j], i, j, runtime->threadpool);
-      if (status != xnn_status_success) { return status; }
-      
       if (runtime->profiling) {
             runtime->opdata[i].end_ts[j] = xnn_read_timer();  
             // PROBE FOR OPERATOR-LEVEL PROFILING
-            DTRACE_PROBE3(text_gen, ops_check, (uint64_t)i, (uint64_t)j,(char*)name);
+            const char* name = xnn_operator_type_to_string_v2(op);
+            static int current_mode = 0;
+            if (op->packed_weights.offset !=NULL){
+                current_mode = op->weights_cache->fetch_arg_int(op->weights_cache->context);
+            }
+            // printf(" Operator %zu object %zu (%s) done, mode=%d\n", i, j, name, current_mode);
+            DTRACE_PROBE4(text_gen, ops_check, (uint64_t)i, (uint64_t)j,(char*)name, (uint64_t)current_mode);
             DTRACE_PROBE(text_gen, ops_start);
         }
-#ifdef USE_WEIGHT_STREAMING
-      //! Hooks for weight streaming: direct io trigger point
-      if (runtime->opdata[i].operator_objects[j]->packed_weights.offset !=NULL){
-            runtime->opdata[i].operator_objects[j]->weights_cache->post_invoke_hook(
-                runtime->opdata[i].operator_objects[j]->weights_cache->context,
-                runtime->opdata[i].operator_objects[j]->packed_weights.offset);
-      }
-#endif
+
     //   printf(" Operator %zu object %zu (%s) done\n", i, j, name);
     }
   }
