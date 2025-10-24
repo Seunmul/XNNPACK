@@ -1141,7 +1141,7 @@ enum xnn_status xnn_invoke_runtime(xnn_runtime_t runtime) {
 if (runtime->profiling) {
     runtime->start_ts = xnn_read_timer();
     // PROBE FOR OPERATOR-LEVEL PROFILING
-    DTRACE_PROBE(text_gen, ops_start);
+    // DTRACE_PROBE(text_gen, ops_start);
 }
 
   for (size_t i = 0; i < runtime->num_ops; i++) {
@@ -1182,8 +1182,8 @@ if (runtime->profiling) {
                 current_mode = op->weights_cache->fetch_arg_int(op->weights_cache->context);
             }
             // printf(" Operator %zu object %zu (%s) done, mode=%d\n", i, j, name, current_mode);
-            DTRACE_PROBE4(text_gen, ops_check, (uint64_t)i, (uint64_t)j,(char*)name, (uint64_t)current_mode);
-            DTRACE_PROBE(text_gen, ops_start);
+            // DTRACE_PROBE4(text_gen, ops_check, (uint64_t)i, (uint64_t)j,(char*)name, (uint64_t)current_mode);
+            // DTRACE_PROBE(text_gen, ops_start);
         }
 
     //   printf(" Operator %zu object %zu (%s) done\n", i, j, name);
