@@ -28,8 +28,8 @@ static inline void* packed_weights(struct xnn_operator* op) {
 
 static inline void* packed_weights_trace(struct xnn_operator* op) {
   if (use_weights_cache(op)) {
-    printf("packed_weights_trace: \n");
-    printf("value of packed_w: %p ptr of packed_w: %p\n", op->dynamic_context.gemm->gemm.packed_w, &op->dynamic_context.gemm->gemm.packed_w);
+    // printf("packed_weights_trace: \n");
+    // printf("value of packed_w: %p ptr of packed_w: %p\n", op->dynamic_context.gemm->gemm.packed_w, &op->dynamic_context.gemm->gemm.packed_w);
 #ifdef USE_WEIGHT_STREAMING
     if(op->dynamic_context.gemm !=NULL){
         op->weights_cache->trace_weights_addr(
