@@ -1148,6 +1148,7 @@ if (runtime->profiling) {
     for (size_t j = 0; j < XNN_MAX_OPERATOR_OBJECTS; j++) {
       if (runtime->opdata[i].operator_objects[j] == NULL) {
         // Operator was removed after fusion
+        // printf(" Skipping operator %zu object %zu as it is NULL\n", i, j);
         continue;
       }
       
@@ -1155,7 +1156,7 @@ if (runtime->profiling) {
       
 #ifdef USE_WEIGHT_STREAMING
       //! Hooks for weight streaming: direct io trigger point
-      if (op->packed_weights.offset !=NULL){
+      if (op->packed_weights.offset != NULL){
       
             op->weights_cache->pre_invoke_hook(
                 op->weights_cache->context,
