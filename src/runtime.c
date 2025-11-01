@@ -1175,12 +1175,14 @@ if (runtime->profiling) {
 #endif
       if (runtime->profiling) {
             runtime->opdata[i].end_ts[j] = xnn_read_timer();  
+            //TODO: DEPRECATED, now, we use ops level probe only at pre-invoke hook and post-invoke hook
+            //TODO: REMOVE LATER
             // PROBE FOR OPERATOR-LEVEL PROFILING
-            const char* name = xnn_operator_type_to_string_v2(op);
-            static int current_mode = 0;
-            if (op->packed_weights.offset !=NULL){
-                current_mode = op->weights_cache->fetch_arg_int(op->weights_cache->context);
-            }
+            // const char* name = xnn_operator_type_to_string_v2(op);
+            // static int current_mode = 0;
+            // if (op->packed_weights.offset !=NULL){
+            //     current_mode = op->weights_cache->fetch_arg_int(op->weights_cache->context);
+            // }
             // printf(" Operator %zu object %zu (%s) done, mode=%d\n", i, j, name, current_mode);
             // DTRACE_PROBE4(text_gen, ops_check, (uint64_t)i, (uint64_t)j,(char*)name, (uint64_t)current_mode);
             // DTRACE_PROBE(text_gen, ops_start);
