@@ -1148,23 +1148,53 @@ if (runtime->profiling) {
     for (size_t j = 0; j < XNN_MAX_OPERATOR_OBJECTS; j++) {
       if (runtime->opdata[i].operator_objects[j] == NULL) {
         // Operator was removed after fusion
+        // printf(" Skipping operator %zu object %zu as it is NULL\n", i, j);
         continue;
       }
       
       xnn_operator_t op = runtime->opdata[i].operator_objects[j];
+
       
 #ifdef USE_WEIGHT_STREAMING
       //! Hooks for weight streaming: direct io trigger point
-      if (op->packed_weights.offset !=NULL){
+    //   if (op->packed_weights.offset != NULL){
       
-            op->weights_cache->pre_invoke_hook(
+    //         op->weights_cache->pre_invoke_hook(
+    //             op->weights_cache->context,
+    //             op->packed_weights.offset);
+    //   }
+      
+      //flush printf
+    //   printf("[runtime] op->packed_weights.pointer: %p | op->packed_weights.offset: %d\n", op->packed_weights.pointer, op->packed_weights.offset);
+    //   for (size_t i = 0; i < op->num_compute_invocations; i++) {
+    //       struct compute_parameters* compute = &op->compute[i];
+    //       void* context = (void*)((uintptr_t)(op->dynamic_context.gemm ? op->dynamic_context.gemm
+    //                                                  : (void*)&op->context) + compute->context_offset);
+    //     if(op->dynamic_context.gemm){
+    //       struct gemm_context* gemm_context = (struct gemm_context*)context;
+    //       printf("[runtime][%d] Running GEMM with packed_w at address: %p\n", i, gemm_context->packed_w);
+    //       fflush(stdout);
+    //     }
+    //   }
+    if(op->num_compute_invocations > 1){
+      struct compute_parameters* compute = &op->compute[0];
+      void* context = (void*)((uintptr_t)(op->dynamic_context.gemm ? op->dynamic_context.gemm
+                                                     : (void*)&op->context) + compute->context_offset);
+      if(op->dynamic_context.gemm){
+          struct gemm_context* gemm_context = (struct gemm_context*)context;
+          if(gemm_context->packed_w == 0x1){
+            // printf("[runtime]context: %p, offset: %zu\n", op->weights_cache->context, op->packed_weights.offset);
+            // fflush(stdout);
+                 op->weights_cache->pre_invoke_hook(
                 op->weights_cache->context,
                 op->packed_weights.offset);
+          }
       }
+    }
+    
 #endif
       const enum xnn_status status = xnn_run_operator_with_index(op, i, j, runtime->threadpool);
       if (status != xnn_status_success) { return status; }
-
 #ifdef USE_WEIGHT_STREAMING
       //! Hooks for weight streaming: direct io trigger point
       if (op->packed_weights.offset !=NULL){

@@ -2333,6 +2333,7 @@ enum xnn_status xnn_run_operator(xnn_operator_t op, pthreadpool_t threadpool) {
   return xnn_run_operator_with_index(op, 0, 0, threadpool);
 }
 
+#include <stdio.h>
 enum xnn_status xnn_run_operator_with_index(xnn_operator_t op,
                                             size_t opdata_index,
                                             size_t operator_object_index,
@@ -2377,9 +2378,10 @@ enum xnn_status xnn_run_operator_with_index(xnn_operator_t op,
                 compute->context_offset);
 
     // if(op->dynamic_context.gemm){
-    //     struct gemm_context* gemm_context = (struct gemm_context*)context;
-    //     printf("Running GEMM with packed_w at address: %p\n", 
-    //            gemm_context->packed_w);
+        // struct gemm_context* gemm_context = (struct gemm_context*)context;
+        // printf("[%d] Running GEMM with packed_w at address: %p\n", i,gemm_context->packed_w);
+        //flush printf
+        // fflush(stdout);
     // }
     
     switch (compute->type) {
